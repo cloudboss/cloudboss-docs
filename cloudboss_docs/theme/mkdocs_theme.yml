@@ -1,0 +1,19 @@
+# The cloudboss theme: Material with the cloudboss look baked in. Projects select it
+# with `theme: {name: cloudboss}` and need no styling of their own.
+extends: material
+
+palette:
+  scheme: default
+  primary: white
+  accent: blue
+
+font:
+  text: Cantarell
+
+features:
+  - navigation.sections
+  - navigation.top
+  - toc.follow
+  - search.suggest
+  - search.highlight
+  - content.code.copy

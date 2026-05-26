@@ -1,0 +1,79 @@
+name: publish-docs
+
+# Reusable workflow. A project calls this from its release job to build its docs
+# with the shared cloudboss theme and publish them with mike. Example caller:
+#
+#   jobs:
+#     docs:
+#       uses: cloudboss/cloudboss-docs/.github/workflows/docs.yml@main
+#       with:
+#         version: ${{ github.ref_name }}
+#         generate: make docs
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version label for this build, usually the release tag.
+        required: true
+        type: string
+      alias:
+        description: Alias to move onto this version.
+        required: false
+        default: latest
+        type: string
+      set-default:
+        description: Point the site root at the alias.
+        required: false
+        default: true
+        type: boolean
+      generate:
+        description: Command run in the project to emit reference markdown.
+        required: false
+        default: ""
+        type: string
+      ref:
+        description: cloudboss-docs version to build against.
+        required: false
+        default: main
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Install the pinned docs toolchain
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          pip install -r "https://raw.githubusercontent.com/cloudboss/cloudboss-docs/${REF}/requirements.txt"
+          pip install --no-deps "git+https://github.com/cloudboss/cloudboss-docs@${REF}"
+
+      - name: Generate reference docs
+        if: ${{ inputs.generate != '' }}
+        run: ${{ inputs.generate }}
+
+      - name: Set up the git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish with mike
+        run: |
+          git fetch origin gh-pages --depth=1 || true
+          mike deploy --push --update-aliases "${{ inputs.version }}" "${{ inputs.alias }}"
+          if [ "${{ inputs.set-default }}" = "true" ]; then
+              mike set-default --push "${{ inputs.alias }}"
+          fi

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cloudboss-docs"
+version = "0.1.0"
+description = "Shared MkDocs theme and tooling for cloudboss project docs."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "mkdocs-material==9.7.6",
+  "mike==2.2.0",
+  # 0.6.2 is the last release that does not depend on the "properdocs"
+  # MkDocs fork (added in 0.6.3), which injects promotional build output.
+  "mkdocs-literate-nav==0.6.2",
+]
+
+[project.entry-points."mkdocs.themes"]
+cloudboss = "cloudboss_docs.theme"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cloudboss_docs"]

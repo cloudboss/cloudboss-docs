@@ -1,0 +1,40 @@
+# Regenerate after changing pyproject.toml:
+#
+#   python3 -m venv /path/to/venv && /path/to/venv/bin/pip install .
+#   /path/to/venv/bin/pip freeze --exclude cloudboss-docs > requirements.txt
+#
+# mkdocs-literate-nav is pinned to 0.6.2 on purpose: 0.6.3 adds a dependency
+# on the "properdocs" MkDocs fork, which injects promotional build output.
+babel==2.18.0
+backrefs==7.0
+certifi==2026.5.20
+charset-normalizer==3.4.7
+click==8.4.1
+colorama==0.4.6
+ghp-import==2.1.0
+idna==3.16
+Jinja2==3.1.6
+Markdown==3.10.2
+MarkupSafe==3.0.3
+mergedeep==1.3.4
+mike==2.2.0
+mkdocs==1.6.1
+mkdocs-get-deps==0.2.2
+mkdocs-literate-nav==0.6.2
+mkdocs-material==9.7.6
+mkdocs-material-extensions==1.3.1
+packaging==26.2
+paginate==0.5.7
+pathspec==1.1.1
+platformdirs==4.9.6
+Pygments==2.20.0
+pymdown-extensions==10.21.3
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+pyyaml_env_tag==1.1
+requests==2.34.2
+six==1.17.0
+urllib3==2.7.0
+verspec==0.1.0
+watchdog==6.0.0
