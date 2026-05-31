@@ -76,7 +76,7 @@ jobs:
           mike deploy \
             --push \
             --update-aliases \
-            --alias-type=copy "${{ inputs.version }}" "${{ inputs.alias }}"
+            --alias-type=redirect "${{ inputs.version }}" "${{ inputs.alias }}"
           if [ "${{ inputs.set-default }}" = "true" ]; then
               mike set-default --push "${{ inputs.alias }}"
           fi
