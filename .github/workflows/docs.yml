@@ -73,7 +73,10 @@ jobs:
       - name: Publish with mike
         run: |
           git fetch origin gh-pages --depth=1 || true
-          mike deploy --push --update-aliases "${{ inputs.version }}" "${{ inputs.alias }}"
+          mike deploy \
+            --push \
+            --update-aliases \
+            --alias-type=copy "${{ inputs.version }}" "${{ inputs.alias }}"
           if [ "${{ inputs.set-default }}" = "true" ]; then
               mike set-default --push "${{ inputs.alias }}"
           fi
