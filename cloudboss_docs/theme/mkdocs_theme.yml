@@ -11,6 +11,7 @@ font:
   text: Cantarell
 
 features:
+  - navigation.prune
   - navigation.sections
   - navigation.top
   - toc.follow
