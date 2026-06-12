@@ -1,6 +1,6 @@
 # cloudboss-docs
 
-Shared documentation tooling for cloudboss project docs. It carries the look in one place so every project's docs match, and publishes them the same way: versioned, with a version dropdown, served from GitHub Pages.
+Shared documentation tooling for cloudboss project docs. It keeps the look in one place so every project's docs match, and publishes them the same way: versioned, with a version dropdown, served from S3 behind CloudFront.
 
 The tooling uses [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) and [mike](https://github.com/jimporter/mike). Search is Material's builtin offline index, so there is no external search service to depend on.
 
@@ -26,7 +26,7 @@ Copy this block verbatim and fill in the project's own `site_name`, `site_url`, 
 
 ```yaml
 site_name: myproject
-site_url: https://www.cloudboss.co/myproject/    # The /<repo>/ path is the GitHub Pages path.
+site_url: https://cloudboss.co/docs/myproject/    # Served from S3/CloudFront under /docs/<repo>/.
 repo_url: https://github.com/cloudboss/myproject
 repo_name: cloudboss/myproject
 copyright: Copyright (c) 2026 cloudboss
@@ -103,15 +103,24 @@ If you would rather nothing generated ever lives in the tree, use the `mkdocs-ge
 
 ## Publishing on release
 
-The site publishes to `https://www.cloudboss.co/<repo>/` from the project repo's `gh-pages` branch. Call the reusable workflow from the project's release job:
+The docs serve at `https://cloudboss.co/docs/<repo>/` from an S3 bucket behind CloudFront. `mike` builds the versioned tree on the project's `gh-pages` branch -- its version store -- and the workflow syncs that tree into the bucket under `docs/<repo>/`, then invalidates the CDN. Call the reusable workflow from the project's release job:
 
 ```yaml
 jobs:
   docs:
+    permissions:
+      contents: write    # mike pushes the gh-pages branch
+      id-token: write    # assume the publisher role via OIDC
     uses: cloudboss/cloudboss-docs/.github/workflows/docs.yml@main
     with:
       version: ${{ github.ref_name }}
       generate: make docs-gen
 ```
+
+The workflow assumes an AWS role with GitHub OIDC, so no keys live in the repo. Three organization variables point it at the stack the `github-docs` factory provisions:
+
+- `DOCS_PUBLISH_ROLE_ARN` -- the publisher role (the factory's `publisher-role-arn` output)
+- `DOCS_BUCKET` -- the origin bucket (`origin-bucket`)
+- `DOCS_DISTRIBUTION_ID` -- the distribution to invalidate (`distribution-id`)
 
 `mike` adds the tag to the version dropdown and moves `latest` onto it. The site root redirects to `latest`.

@@ -43,6 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Check out the project
         uses: actions/checkout@v4.3.1
@@ -80,3 +81,23 @@ jobs:
           if [ "${{ inputs.set-default }}" = "true" ]; then
               mike set-default --push "${{ inputs.alias }}"
           fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DOCS_PUBLISH_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Sync to S3 and invalidate CloudFront
+        env:
+          BUCKET: ${{ vars.DOCS_BUCKET }}
+          DISTRIBUTION_ID: ${{ vars.DOCS_DISTRIBUTION_ID }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          dest="$RUNNER_TEMP/ghp"
+          rm -rf "$dest" && mkdir -p "$dest"
+          git archive gh-pages | tar -x -C "$dest"
+          aws s3 sync "$dest/" "s3://$BUCKET/docs/$REPO/" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/docs/$REPO/*"
