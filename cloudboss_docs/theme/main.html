@@ -3,4 +3,7 @@
 {% block extrahead %}
   {{ super() }}
   <style>{% include "css/cloudboss.css" %}</style>
+  {% if config.extra and config.extra.get("unobin_reference") %}
+    <style>{% include "css/unobin-reference.css" %}</style>
+  {% endif %}
 {% endblock %}

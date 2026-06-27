@@ -32,6 +32,16 @@ on:
         required: false
         default: ""
         type: string
+      setup-go:
+        description: Install Go before running the generator command.
+        required: false
+        default: false
+        type: boolean
+      go-version-file:
+        description: Path to a go.mod file for actions/setup-go.
+        required: false
+        default: go.mod
+        type: string
       ref:
         description: cloudboss-docs version to build against.
         required: false
@@ -61,6 +71,12 @@ jobs:
         run: |
           pip install -r "https://raw.githubusercontent.com/cloudboss/cloudboss-docs/${REF}/requirements.txt"
           pip install --no-deps "git+https://github.com/cloudboss/cloudboss-docs@${REF}"
+
+      - name: Set up Go
+        if: ${{ inputs.setup-go }}
+        uses: actions/setup-go@v6.1.0
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
 
       - name: Generate reference docs
         if: ${{ inputs.generate != '' }}

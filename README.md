@@ -7,6 +7,7 @@ The tooling uses [Material for MkDocs](https://squidfunk.github.io/mkdocs-materi
 ## Contents
 
 - `cloudboss_docs/theme/`: A MkDocs theme named `cloudboss` that extends `material` and bakes in the look: Cantarell, the cloudboss palette, the header logo size, and the callout treatment. The CSS is injected by the theme itself, so a project needs no styling of its own.
+- `unobin/`: A Go module with `cmd/docgen`, a generator for Unobin library reference pages.
 - `pyproject.toml`: Packages the theme and declares its direct dependencies.
 - `requirements.txt`: Every dependency, direct and transitive, pinned to an exact version for reproducible builds.
 - `.github/workflows/docs.yml`: A reusable workflow a project's release job calls to build and publish.
@@ -82,6 +83,42 @@ Handwritten guides live in `docs/`. Reference pages, like CLI options or API ref
 The generator is the project's own program, in whatever language and tooling is suitable for the project. Its job is to write Markdown into the docs tree, usually under `docs/reference/`. How it produces that Markdown is up to the project.
 
 As one example, a Go project can walk its own command tree for a CLI reference and read its package comments through `go/doc` for an API reference. A project in another language does the equivalent with its own tools; nothing here assumes Go or any particular CLI library.
+
+### Unobin library references
+
+Unobin libraries can use the shared generator from the `unobin/` Go module:
+
+```bash
+go run github.com/cloudboss/cloudboss-docs/unobin/cmd/docgen@unobin/v0.1.0 \
+  --root . \
+  --out docs/reference
+```
+
+Use `--alias` only when the default alias derived from the module path is not
+what the examples should show. For example, `github.com/cloudboss/unobin-library-aws`
+defaults to `aws`.
+
+Enable the reference-page CSS only for Unobin library sites:
+
+```yaml
+extra:
+  unobin_reference: true
+  version:
+    provider: mike
+    default: latest
+```
+
+The generator writes `SUMMARY.md` files for `mkdocs-literate-nav`, so keep the
+plugin enabled when generated reference directories are listed in `nav:`.
+
+When using the reusable workflow for a Unobin library, request Go setup before
+the generate step:
+
+```yaml
+with:
+  setup-go: true
+  generate: go run github.com/cloudboss/cloudboss-docs/unobin/cmd/docgen@unobin/v0.1.0 --root . --out docs/reference
+```
 
 ### Running it before the build
 
