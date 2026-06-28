@@ -219,7 +219,7 @@ func Library() *runtime.Library {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(index), "- [Functions](functions/) (1)")
+	assertContains(t, string(index), "- [Functions](functions/index.md) (1)")
 	assertNotContains(t, string(index), "Resources")
 
 	got, err := os.ReadFile(filepath.Join(out, "functions", "join.md"))

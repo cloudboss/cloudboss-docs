@@ -106,10 +106,10 @@ func (r renderer) writeReferenceIndex(categories []category) error {
 		b.WriteString("- [Configuration](configuration.md)\n")
 	}
 	for _, cat := range categories {
-		fmt.Fprintf(&b, "- [%s](%s/) (%d)\n", cat.Title, cat.Dir, len(cat.TypeSchema))
+		fmt.Fprintf(&b, "- [%s](%s/index.md) (%d)\n", cat.Title, cat.Dir, len(cat.TypeSchema))
 	}
 	if len(r.schema.Functions) > 0 {
-		fmt.Fprintf(&b, "- [Functions](functions/) (%d)\n", len(r.schema.Functions))
+		fmt.Fprintf(&b, "- [Functions](functions/index.md) (%d)\n", len(r.schema.Functions))
 	}
 	return writeFile(filepath.Join(r.outDir, "index.md"), b.String())
 }
