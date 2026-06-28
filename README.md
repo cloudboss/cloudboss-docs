@@ -6,7 +6,7 @@ The tooling uses [Material for MkDocs](https://squidfunk.github.io/mkdocs-materi
 
 ## Contents
 
-- `cloudboss_docs/theme/`: A MkDocs theme named `cloudboss` that extends `material` and bakes in the look: Cantarell, the cloudboss palette, the header logo size, and the callout treatment. The CSS is injected by the theme itself, so a project needs no styling of its own.
+- `cloudboss_docs/theme/`: A MkDocs theme named `cloudboss` that extends `material` and bakes in the look: Cantarell, the cloudboss palette, the header logo size, callout treatment, and optional Google Analytics. The CSS is injected by the theme itself, so a project needs no styling of its own.
 - `unobin/`: A Go module with `cmd/docgen`, a generator for Unobin library reference pages.
 - `pyproject.toml`: Packages the theme and declares its direct dependencies.
 - `requirements.txt`: Every dependency, direct and transitive, pinned to an exact version for reproducible builds.
@@ -51,6 +51,7 @@ plugins:
   - search
 
 extra:
+  google_analytics_property: G-XXXXXXXXXX
   version:
     provider: mike
     default: latest
@@ -59,6 +60,8 @@ nav:
   - Introduction:
       - Overview: index.md
 ```
+
+Set `extra.google_analytics_property` to a GA4 measurement ID when the docs should report analytics. Omit it for docs that should not use analytics.
 
 Put handwritten prose under the project's `docs/`. Reference pages can be generated from the project's own code (see [below](#generating-reference-from-code)) and stored alongside.
 

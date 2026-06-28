@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 
+{% block analytics %}{% endblock %}
+
 {% block extrahead %}
   {{ super() }}
+  {% set analytics_property = config.extra.get("google_analytics_property") if config.extra else none %}
+  {% if analytics_property %}
+    <script async src="https://www.googletagmanager.com/gtag/js?id={{ analytics_property | urlencode }}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag("js", new Date());
+      gtag("config", {{ analytics_property | tojson }});
+    </script>
+  {% endif %}
   <style>{% include "css/cloudboss.css" %}</style>
   {% if config.extra and config.extra.get("unobin_reference") %}
     <style>{% include "css/unobin-reference.css" %}</style>
