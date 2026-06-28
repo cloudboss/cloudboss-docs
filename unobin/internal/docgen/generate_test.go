@@ -1,8 +1,10 @@
 package docgen
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -230,6 +232,61 @@ func Library() *runtime.Library {
 	assertContains(t, text, "# std.join function")
 	assertContains(t, text, "Source: `library.go:9`")
 	assertContains(t, text, "std.join(list(string), string) string")
+}
+
+func TestFindUnobinModuleRootDownloadsMissingModule(t *testing.T) {
+	dir := t.TempDir()
+	moduleDir := filepath.Join(dir, "unobin")
+	downloaded := false
+	var calls [][]string
+	oldRunGoCommand := runGoCommand
+	runGoCommand = func(gotDir string, args ...string) ([]byte, error) {
+		if gotDir != dir {
+			return nil, errors.New("unexpected command directory")
+		}
+		calls = append(calls, append([]string(nil), args...))
+		switch {
+		case slices.Equal(args, []string{"list", "-m", "-f", "{{.Dir}}", unobinModulePath}):
+			if downloaded {
+				return []byte(moduleDir + "\n"), nil
+			}
+			return []byte("\n"), nil
+		case slices.Equal(args, []string{"mod", "download", unobinModulePath}):
+			downloaded = true
+			return nil, nil
+		default:
+			return nil, errors.New("unexpected go command")
+		}
+	}
+	t.Cleanup(func() { runGoCommand = oldRunGoCommand })
+
+	root, err := findUnobinModuleRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != (goschema.ModuleRoot{Path: unobinModulePath, Dir: moduleDir}) {
+		t.Fatalf("unexpected module root: %#v", root)
+	}
+	wantCalls := [][]string{
+		{"list", "-m", "-f", "{{.Dir}}", unobinModulePath},
+		{"mod", "download", unobinModulePath},
+		{"list", "-m", "-f", "{{.Dir}}", unobinModulePath},
+	}
+	if !equalStringLists(calls, wantCalls) {
+		t.Fatalf("unexpected go calls: %#v", calls)
+	}
+}
+
+func equalStringLists(left [][]string, right [][]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if !slices.Equal(left[i], right[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestWriteConfigurationUsesFieldCards(t *testing.T) {

@@ -15,6 +15,12 @@ import (
 
 const unobinModulePath = "github.com/cloudboss/unobin"
 
+var runGoCommand = func(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	return cmd.CombinedOutput()
+}
+
 // Options configures a docs generation run.
 type Options struct {
 	RootDir     string
@@ -107,17 +113,39 @@ func docsOutputDir(rootAbs string, outDir string) (string, error) {
 }
 
 func findUnobinModuleRoot(dir string) (goschema.ModuleRoot, error) {
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", unobinModulePath)
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	modDir, err := goModuleDir(dir, unobinModulePath)
 	if err != nil {
-		return goschema.ModuleRoot{}, fmt.Errorf("locate unobin module: %w", err)
+		return goschema.ModuleRoot{}, err
 	}
-	modDir := strings.TrimSpace(string(out))
+	if modDir == "" {
+		if err := goDownloadModule(dir, unobinModulePath); err != nil {
+			return goschema.ModuleRoot{}, err
+		}
+		modDir, err = goModuleDir(dir, unobinModulePath)
+		if err != nil {
+			return goschema.ModuleRoot{}, err
+		}
+	}
 	if modDir == "" {
 		return goschema.ModuleRoot{}, errors.New("unobin module directory is empty")
 	}
 	return goschema.ModuleRoot{Path: unobinModulePath, Dir: modDir}, nil
+}
+
+func goModuleDir(dir string, modulePath string) (string, error) {
+	out, err := runGoCommand(dir, "list", "-m", "-f", "{{.Dir}}", modulePath)
+	if err != nil {
+		return "", fmt.Errorf("locate unobin module: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func goDownloadModule(dir string, modulePath string) error {
+	out, err := runGoCommand(dir, "mod", "download", modulePath)
+	if err != nil {
+		return fmt.Errorf("download unobin module: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func currentModulePath(dir string) (string, error) {
