@@ -40,7 +40,7 @@ type ServerOutput struct {
 func Library() *runtime.Library {
 	return &runtime.Library{
 		Resources: map[string]runtime.ResourceRegistration{
-			"server": runtime.MakeResource[Server, *ServerOutput, any](),
+			"server": runtime.MakeResource[Server, *ServerOutput, runtime.NoConfig, *Server](),
 		},
 	}
 }
@@ -96,7 +96,7 @@ type ServerOutput struct {
 func Library() *runtime.Library {
 	return &runtime.Library{
 		Resources: map[string]runtime.ResourceRegistration{
-			"server": runtime.MakeResource[Server, *ServerOutput, any](),
+			"server": runtime.MakeResource[Server, *ServerOutput, runtime.NoConfig, *Server](),
 		},
 	}
 }
@@ -180,6 +180,165 @@ func Library() *runtime.Library { return &runtime.Library{} }
 	if _, err := os.Stat(filepath.Join(out, "configuration.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected no configuration page, got %v", err)
 	}
+}
+
+func TestGenerateWritesPointerOptionalInputsAndNullableDefaults(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"),
+		"module example.com/unobin-library-compute\n\ngo 1.26\n")
+	writeTestFile(t, filepath.Join(dir, "library.go"), `package library
+
+import (
+	"github.com/cloudboss/unobin/pkg/defaults"
+	"github.com/cloudboss/unobin/pkg/runtime"
+)
+
+type Server struct {
+	Name       string
+	Tags       map[string]string
+	Names      []string
+	MaybeTags  *map[string]string `+"`"+`ub:"maybe-tags"`+"`"+`
+	MaybeNames *[]string          `+"`"+`ub:"maybe-names"`+"`"+`
+	Profile    *string
+}
+
+type ServerOutput struct {
+	ID string
+}
+
+func (s Server) Defaults() []defaults.Default {
+	return []defaults.Default{
+		defaults.NullableValue(s.MaybeTags, map[string]string{"env": "test"}),
+		defaults.NullableValue(s.MaybeNames, []string{"web"}),
+		defaults.NullableValue(s.Profile, "dev"),
+	}
+}
+
+func Library() *runtime.Library {
+	return &runtime.Library{
+		Resources: map[string]runtime.ResourceRegistration{
+			"server": runtime.MakeResource[Server, *ServerOutput, runtime.NoConfig, *Server](),
+		},
+	}
+}
+`)
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir: dir,
+		OutDir:  out,
+		Extra:   []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(out, "resources", "server.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	assertFieldCardContains(t, text, "tags", "<code>map(string)</code>")
+	assertFieldCardContains(t, text, "tags", "ub-badge--required")
+	assertFieldCardContains(t, text, "names", "<code>list(string)</code>")
+	assertFieldCardContains(t, text, "names", "ub-badge--required")
+	assertFieldCardContains(t, text, "maybe-tags", "<code>optional(map(string))</code>")
+	assertFieldCardContains(t, text, "maybe-tags", "{ env: &#39;test&#39; }")
+	assertFieldCardNotContains(t, text, "maybe-tags", "ub-badge--required")
+	assertFieldCardContains(t, text, "maybe-names", "<code>optional(list(string))</code>")
+	assertFieldCardContains(t, text, "maybe-names", "[&#39;web&#39;]")
+	assertFieldCardNotContains(t, text, "maybe-names", "ub-badge--required")
+	assertFieldCardContains(t, text, "profile", "<code>optional(string)</code>")
+	assertFieldCardContains(t, text, "profile", "<code class=\"ub-default-value\">dev</code>")
+	assertFieldCardNotContains(t, text, "profile", "ub-badge--required")
+}
+
+func TestGenerateWritesPlainConfigurationDefaultsAndConstraints(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/lib\n\ngo 1.26\n")
+	writeTestFile(t, filepath.Join(dir, "library.go"), `package library
+
+import (
+	"github.com/cloudboss/unobin/pkg/constraint"
+	"github.com/cloudboss/unobin/pkg/defaults"
+	"github.com/cloudboss/unobin/pkg/runtime"
+	"github.com/cloudboss/unobin/pkg/sdk/cfg"
+)
+
+type Configuration struct {
+	Region      string
+	Profile     *string
+	Tags        map[string]string
+	MaybeTags   *map[string]string `+"`"+`ub:"maybe-tags"`+"`"+`
+	MaxAttempts int64              `+"`"+`ub:"max-attempts"`+"`"+`
+}
+
+func (c Configuration) Defaults() []defaults.Default {
+	return []defaults.Default{
+		defaults.Value(c.MaxAttempts, int64(3)),
+		defaults.NullableValue(c.Profile, "dev"),
+		defaults.NullableValue(c.MaybeTags, map[string]string{"owner": "docs"}),
+	}
+}
+
+func (c Configuration) Constraints() []constraint.Constraint {
+	return []constraint.Constraint{
+		constraint.Must(constraint.NotEmpty(c.Region)).Message("region is required"),
+		constraint.Must(constraint.AtLeast(c.MaxAttempts, 1)).
+			Message("max-attempts must be positive"),
+	}
+}
+
+func Library() *runtime.Library {
+	return &runtime.Library{
+		Configuration: &cfg.ConfigurationType[*Configuration]{
+			New: func() *Configuration {
+				return &Configuration{}
+			},
+		},
+	}
+}
+`)
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir: dir,
+		OutDir:  out,
+		Extra:   []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	index, err := os.ReadFile(filepath.Join(out, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(index), "- [Configuration](configuration.md)")
+
+	got, err := os.ReadFile(filepath.Join(out, "configuration.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	assertFieldCardContains(t, text, "region", "<code>string</code>")
+	assertFieldCardContains(t, text, "region", "ub-badge--required")
+	assertFieldCardContains(t, text, "tags", "<code>map(string)</code>")
+	assertFieldCardContains(t, text, "tags", "ub-badge--required")
+	assertFieldCardContains(t, text, "profile", "<code>optional(string)</code>")
+	assertFieldCardContains(t, text, "profile", "<code class=\"ub-default-value\">dev</code>")
+	assertFieldCardNotContains(t, text, "profile", "ub-badge--required")
+	assertFieldCardContains(t, text, "maybe-tags", "<code>optional(map(string))</code>")
+	assertFieldCardContains(t, text, "maybe-tags", "{ owner: &#39;docs&#39; }")
+	assertFieldCardNotContains(t, text, "maybe-tags", "ub-badge--required")
+	assertFieldCardContains(t, text, "max-attempts", "<code>integer</code>")
+	assertFieldCardContains(t, text, "max-attempts", "<code class=\"ub-default-value\">3</code>")
+	assertFieldCardNotContains(t, text, "max-attempts", "ub-badge--required")
+	assertContains(t, text, "## Configuration Constraints")
+	assertContains(t, text,
+		"<p class=\"ub-constraint-summary\"><strong>region</strong> is required.</p>")
+	assertContains(t, text,
+		"<p class=\"ub-constraint-summary\"><strong>max-attempts</strong> must be positive.</p>")
 }
 
 func TestGenerateWritesFunctionReference(t *testing.T) {
@@ -317,11 +476,11 @@ func TestWriteConfigurationUsesFieldCards(t *testing.T) {
 	text := string(got)
 	assertContains(t, text, "`library-config('example.com/lib')`")
 	assertContains(t, text, "## Fields\n\n<div class=\"ub-fields\">")
-	assertContains(t, text, "<p class=\"ub-field-name\"><strong>region</strong></p>")
-	assertContains(t, text, "<p class=\"ub-field-type\"><code>string</code></p>")
-	assertContains(t, text, "<p class=\"ub-field-name\"><strong>retry-mode</strong></p>")
-	assertContains(t, text, "<span class=\"ub-default-label\">default</span>")
-	assertContains(t, text, "<code class=\"ub-default-value\">standard</code>")
+	assertFieldCardContains(t, text, "region", "<code>optional(string)</code>")
+	assertFieldCardNotContains(t, text, "region", "ub-badge--required")
+	assertFieldCardContains(t, text, "retry-mode", "<code>optional(string)</code>")
+	assertFieldCardContains(t, text, "retry-mode", "<span class=\"ub-default-label\">default</span>")
+	assertFieldCardContains(t, text, "retry-mode", "<code class=\"ub-default-value\">standard</code>")
 	assertContains(t, text, "<p class=\"ub-field-name\"><strong>endpoints</strong></p>")
 	assertContains(t, text, "<summary><code>object</code></summary>")
 	assertContains(t, text, strings.Join([]string{
@@ -564,6 +723,34 @@ func assertNotContains(t *testing.T, haystack, needle string) {
 	if strings.Contains(haystack, needle) {
 		t.Fatalf("expected %q not to contain %q", haystack, needle)
 	}
+}
+
+func assertFieldCardContains(t *testing.T, text, field, needle string) {
+	t.Helper()
+	assertContains(t, fieldCardHTML(t, text, field), needle)
+}
+
+func assertFieldCardNotContains(t *testing.T, text, field, needle string) {
+	t.Helper()
+	assertNotContains(t, fieldCardHTML(t, text, field), needle)
+}
+
+func fieldCardHTML(t *testing.T, text, field string) string {
+	t.Helper()
+	marker := "<p class=\"ub-field-name\"><strong>" + field + "</strong></p>"
+	nameIndex := strings.Index(text, marker)
+	if nameIndex == -1 {
+		t.Fatalf("expected field card for %q in %q", field, text)
+	}
+	start := strings.LastIndex(text[:nameIndex], "<section ")
+	if start == -1 {
+		t.Fatalf("expected field card section for %q in %q", field, text)
+	}
+	end := strings.Index(text[nameIndex:], "</section>")
+	if end == -1 {
+		t.Fatalf("expected field card end for %q in %q", field, text)
+	}
+	return text[start : nameIndex+end+len("</section>")]
 }
 
 func assertBefore(t *testing.T, haystack, left, right string) {

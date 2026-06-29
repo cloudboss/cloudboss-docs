@@ -146,6 +146,12 @@ func (r renderer) writeConfiguration() error {
 	} else {
 		b.WriteString("\nThis library declares an empty configuration schema.\n")
 	}
+	writeConstraintSection(
+		&b,
+		"Configuration Constraints",
+		"This library declares no configuration constraints.",
+		r.schema.ConfigurationConstraints,
+	)
 
 	return writeFile(filepath.Join(r.outDir, "configuration.md"), b.String())
 }
@@ -336,7 +342,7 @@ func writeObjectFieldCards(
 		writeFieldCard(b,
 			fieldCard{
 				Name:            field.Name,
-				Type:            field.Type,
+				Type:            displayObjectFieldType(field),
 				IncludeRequired: true,
 				Required:        objectFieldRequired(field, hasDefault),
 				Sensitive:       sensitiveSet[field.Name],
@@ -510,9 +516,23 @@ func markdownEscapedPunct(b byte) bool {
 }
 
 func (r renderer) writeConstraints(b *strings.Builder, constraints []lang.ConstraintSpec) {
-	b.WriteString("\n## Input Constraints\n\n")
+	writeConstraintSection(
+		b,
+		"Input Constraints",
+		"This kind declares no extra input constraints.",
+		constraints,
+	)
+}
+
+func writeConstraintSection(
+	b *strings.Builder,
+	title string,
+	emptyText string,
+	constraints []lang.ConstraintSpec,
+) {
+	fmt.Fprintf(b, "\n## %s\n\n", title)
 	if len(constraints) == 0 {
-		b.WriteString("This kind declares no extra input constraints.\n")
+		fmt.Fprintf(b, "%s\n", emptyText)
 		return
 	}
 	b.WriteString("<div class=\"ub-constraints\">\n")
@@ -621,6 +641,13 @@ func fieldRequired(typ typecheck.Type, hasDefault bool) bool {
 
 func objectFieldRequired(field typecheck.ObjectField, hasDefault bool) bool {
 	return !hasDefault && !field.Optional && !field.Defaulted && field.Type.Kind != typecheck.Optional
+}
+
+func displayObjectFieldType(field typecheck.ObjectField) typecheck.Type {
+	if field.Optional && field.Type.Kind != typecheck.Optional {
+		return typecheck.TOptional(field.Type)
+	}
+	return field.Type
 }
 
 func typeLines(typ typecheck.Type) []string {
