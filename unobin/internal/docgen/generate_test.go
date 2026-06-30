@@ -627,6 +627,13 @@ func TestWriteConstraintsRendersGroupedCards(t *testing.T) {
 		},
 		{
 			Kind:    "predicate",
+			ForEach: "input.cpu-configurations ?? []",
+			When:    "true",
+			Require: "@each.value.cpu != null",
+			Message: "cpu-configurations entries must include cpu",
+		},
+		{
+			Kind:    "predicate",
 			ForEach: "input.emit-system-fields",
 			Require: "@each.value == '@cloud.account' || @each.value == '@cloud.region'",
 			Message: "emit-system-fields entries must be @cloud.account or @cloud.region",
@@ -658,47 +665,132 @@ func TestWriteConstraintsRendersGroupedCards(t *testing.T) {
 	renderer{}.writeConstraints(&b, constraints)
 	got := b.String()
 
-	assertContains(t, got, "## Input Constraints")
-	assertContains(t, got, "<div class=\"ub-constraints\">")
-	assertContains(t, got, "<h3 class=\"ub-constraint-group-title\">Protocol rules</h3>")
-	assertContains(t, got, "<p class=\"ub-constraint-summary\">TLS fields require a TLS listener.</p>")
-	assertContains(t, got, "<summary>Rule logic</summary>")
-	assertContains(t, got, "<dt>When</dt>")
-	assertContains(t, got, "<code>input.protocol == &#39;HTTP&#39;</code><br>")
-	assertContains(t, got, "<code>|| input.protocol == &#39;TCP_QUIC&#39;</code>")
-	assertContains(t, got, "<dt>Require</dt>")
-	assertContains(t, got, "<code>input.ssl-policy == null</code><br>")
-	assertContains(t, got, "<code>&amp;&amp; input.alpn-policy == null</code>")
-	assertContains(t, got, "<h3 class=\"ub-constraint-group-title\">Default action rules</h3>")
-	assertContains(t, got, "<dt>For each</dt>")
-	assertContains(t, got, "<code>input.default-action</code>")
-	assertContains(t, got, "<h3 class=\"ub-constraint-group-title\">Route settings rules</h3>")
-	assertContains(t, got, strings.Join([]string{
-		"<strong>route-settings</strong> logging-level must be <code>ERROR</code>,",
-		"<code>INFO</code>, or <code>OFF</code>.",
-	}, " "))
-	assertContains(t, got, "<h3 class=\"ub-constraint-group-title\">Emit system fields rules</h3>")
-	assertContains(t, got, strings.Join([]string{
-		"<strong>emit-system-fields</strong> entries must be <code>@cloud.account</code>",
-		"or <code>@cloud.region</code>.",
-	}, " "))
-	assertContains(t, got, "<h3 class=\"ub-constraint-group-title\">Field combinations</h3>")
-	assertContains(t, got, "At most one of <strong>a</strong> or <strong>b</strong>.")
-	assertContains(t, got, strings.Join([]string{
-		"Exactly one of <strong>carrier-gateway-id</strong>,",
-		"<strong>gateway-id</strong>, or <strong>nat-gateway-id</strong>.",
-	}, " "))
-	assertContains(t, got,
-		"Required together: <strong>certificate-body</strong> and <strong>private-key</strong>.")
-	assertContains(t, got, strings.Join([]string{
-		"Forbidden together: <strong>domain-name</strong>,",
-		"<strong>certificate-body</strong>, <strong>private-key</strong>, and",
-		"<strong>certificate-chain</strong>.",
-	}, " "))
-	assertNotContains(t, got, "!!! constraint")
-	assertNotContains(t, got, "Conditional requirement")
-	assertNotContains(t, got, "```")
-	assertNotContains(t, got, "when: "+constraints[0].When+"; require:")
+	want := "\n" + strings.Join([]string{
+		"## Input Constraints",
+		"",
+		"<div class=\"ub-constraints\">",
+		"<section class=\"ub-constraint-group\" data-constraint-group=\"protocol\">",
+		"<h3 class=\"ub-constraint-group-title\">Protocol rules</h3>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">TLS fields require a TLS listener.</p>",
+		"<details class=\"ub-constraint-logic\">",
+		"<summary>Rule logic</summary>",
+		"<dl>",
+		"<dt>When</dt>",
+		"<dd><code>input.protocol == &#39;HTTP&#39;</code><br>",
+		"<code>|| input.protocol == &#39;TCP&#39;</code><br>",
+		"<code>|| input.protocol == &#39;UDP&#39;</code><br>",
+		"<code>|| input.protocol == &#39;TCP_UDP&#39;</code><br>",
+		"<code>|| input.protocol == &#39;GENEVE&#39;</code><br>",
+		"<code>|| input.protocol == &#39;QUIC&#39;</code><br>",
+		"<code>|| input.protocol == &#39;TCP_QUIC&#39;</code></dd>",
+		"<dt>Require</dt>",
+		"<dd><code>input.ssl-policy == null</code><br>",
+		"<code>&amp;&amp; input.certificate-arn == null</code><br>",
+		"<code>&amp;&amp; input.alpn-policy == null</code></dd>",
+		"</dl>",
+		"</details>",
+		"</div>",
+		"</section>",
+		"<section class=\"ub-constraint-group\" data-constraint-group=\"default-action\">",
+		"<h3 class=\"ub-constraint-group-title\">Default action rules</h3>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">" +
+			"a forward action takes target-group-arn or a forward block only.</p>",
+		"<details class=\"ub-constraint-logic\">",
+		"<summary>Rule logic</summary>",
+		"<dl>",
+		"<dt>For each</dt>",
+		"<dd><code>input.default-action</code></dd>",
+		"<dt>Require</dt>",
+		"<dd><code>((@each.value.target-group-arn != null) || " +
+			"(@each.value.forward != null))</code><br>",
+		"<code>&amp;&amp; @each.value.redirect == null</code></dd>",
+		"</dl>",
+		"</details>",
+		"</div>",
+		"</section>",
+		"<section class=\"ub-constraint-group\" data-constraint-group=\"route-settings\">",
+		"<h3 class=\"ub-constraint-group-title\">Route settings rules</h3>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\"><strong>route-settings</strong> " +
+			"logging-level must be <code>ERROR</code>, <code>INFO</code>, or " +
+			"<code>OFF</code>.</p>",
+		"<details class=\"ub-constraint-logic\">",
+		"<summary>Rule logic</summary>",
+		"<dl>",
+		"<dt>For each</dt>",
+		"<dd><code>input.route-settings</code></dd>",
+		"<dt>When</dt>",
+		"<dd><code>@each.value.logging-level != null</code></dd>",
+		"<dt>Require</dt>",
+		"<dd><code>@each.value.logging-level == &#39;ERROR&#39;</code><br>",
+		"<code>|| @each.value.logging-level == &#39;INFO&#39;</code><br>",
+		"<code>|| @each.value.logging-level == &#39;OFF&#39;</code></dd>",
+		"</dl>",
+		"</details>",
+		"</div>",
+		"</section>",
+		"<section class=\"ub-constraint-group\" data-constraint-group=\"cpu-configurations\">",
+		"<h3 class=\"ub-constraint-group-title\">Cpu configurations rules</h3>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\"><strong>cpu-configurations</strong> " +
+			"entries must include cpu.</p>",
+		"<details class=\"ub-constraint-logic\">",
+		"<summary>Rule logic</summary>",
+		"<dl>",
+		"<dt>For each</dt>",
+		"<dd><code>input.cpu-configurations ?? []</code></dd>",
+		"<dt>Require</dt>",
+		"<dd><code>@each.value.cpu != null</code></dd>",
+		"</dl>",
+		"</details>",
+		"</div>",
+		"</section>",
+		"<section class=\"ub-constraint-group\" data-constraint-group=\"emit-system-fields\">",
+		"<h3 class=\"ub-constraint-group-title\">Emit system fields rules</h3>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\"><strong>emit-system-fields</strong> " +
+			"entries must be <code>@cloud.account</code> or " +
+			"<code>@cloud.region</code>.</p>",
+		"<details class=\"ub-constraint-logic\">",
+		"<summary>Rule logic</summary>",
+		"<dl>",
+		"<dt>For each</dt>",
+		"<dd><code>input.emit-system-fields</code></dd>",
+		"<dt>Require</dt>",
+		"<dd><code>@each.value == &#39;@cloud.account&#39;</code><br>",
+		"<code>|| @each.value == &#39;@cloud.region&#39;</code></dd>",
+		"</dl>",
+		"</details>",
+		"</div>",
+		"</section>",
+		"<section class=\"ub-constraint-group\" data-constraint-group=\"field-combinations\">",
+		"<h3 class=\"ub-constraint-group-title\">Field combinations</h3>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">At most one of <strong>a</strong> " +
+			"or <strong>b</strong>.</p>",
+		"</div>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">Exactly one of " +
+			"<strong>carrier-gateway-id</strong>, <strong>gateway-id</strong>, or " +
+			"<strong>nat-gateway-id</strong>.</p>",
+		"</div>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">Required together: " +
+			"<strong>certificate-body</strong> and <strong>private-key</strong>.</p>",
+		"</div>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">Forbidden together: " +
+			"<strong>domain-name</strong>, <strong>certificate-body</strong>, " +
+			"<strong>private-key</strong>, and <strong>certificate-chain</strong>.</p>",
+		"</div>",
+		"</section>",
+		"</div>",
+	}, "\n") + "\n"
+	if got != want {
+		t.Fatalf("expected constraint output:\n%s\n\ngot:\n%s", want, got)
+	}
 }
 
 func writeTestFile(t *testing.T, path, content string) {

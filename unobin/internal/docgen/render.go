@@ -973,7 +973,7 @@ func displayFieldRef(ref string) string {
 func constraintSummaryFieldNames(spec lang.ConstraintSpec) []string {
 	seen := map[string]bool{}
 	add := func(field string) {
-		field = fieldSegment(field)
+		field = constraintFieldSegment(field)
 		if field == "" || seen[field] {
 			return
 		}
@@ -1130,12 +1130,19 @@ func forEachLevelName(name string) string {
 
 var inputRefPattern = regexp.MustCompile(`\binput\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)`)
 
+func constraintFieldSegment(src string) string {
+	if field := firstInputField(src); field != "" {
+		return field
+	}
+	return fieldSegment(src)
+}
+
 func constraintGroupKey(spec lang.ConstraintSpec) string {
-	if field := fieldSegment(spec.ForEach); field != "" {
+	if field := constraintFieldSegment(spec.ForEach); field != "" {
 		return field
 	}
 	if len(spec.ForEachLevels) > 0 {
-		if field := fieldSegment(spec.ForEachLevels[0].In); field != "" {
+		if field := constraintFieldSegment(spec.ForEachLevels[0].In); field != "" {
 			return field
 		}
 	}
