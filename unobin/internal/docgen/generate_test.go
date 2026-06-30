@@ -2,6 +2,7 @@ package docgen
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,6 +56,17 @@ func Library() *runtime.Library {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	index, err := os.ReadFile(filepath.Join(out, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(index), "# Overview")
+	summary, err := os.ReadFile(filepath.Join(out, "SUMMARY.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(summary), "* [Overview](index.md)")
 
 	got, err := os.ReadFile(filepath.Join(out, "resources", "server.md"))
 	if err != nil {
@@ -391,6 +403,179 @@ func Library() *runtime.Library {
 	assertContains(t, text, "# std.join function")
 	assertContains(t, text, "Source: `library.go:9`")
 	assertContains(t, text, "std.join(list(string), string) string")
+}
+
+func TestGenerateReadsLibraryPackageBelowRoot(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"),
+		"module example.com/unobin-library-cloud\n\ngo 1.26\n")
+	writeTestFile(t, filepath.Join(dir, "internal", "storage", "types.go"), `package storage
+
+// Bucket stores objects.
+type Bucket struct {
+	Name string `+"`"+`ub:"name"`+"`"+`
+}
+
+type BucketOutput struct {
+	ID string `+"`"+`ub:"id"`+"`"+`
+}
+`)
+	writeTestFile(t, filepath.Join(dir, "s3", "library.go"), `package s3
+
+import (
+	"example.com/unobin-library-cloud/internal/storage"
+
+	"github.com/cloudboss/unobin/pkg/runtime"
+)
+
+func Library() *runtime.Library {
+	return &runtime.Library{
+		Resources: map[string]runtime.ResourceRegistration{
+			"bucket": runtime.MakeResource[
+				storage.Bucket,
+				*storage.BucketOutput,
+				runtime.NoConfig,
+				*storage.Bucket,
+			](),
+		},
+	}
+}
+`)
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir:     dir,
+		OutDir:      out,
+		PackageDir:  "s3",
+		ModulePath:  "example.com/unobin-library-cloud//s3",
+		ImportAlias: "aws-s3",
+		Extra:       []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(out, "resources", "bucket.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	assertContains(t, text, "# aws-s3.bucket resource")
+	assertContains(t, text, "aws-s3: 'example.com/unobin-library-cloud//s3'")
+	assertContains(t, text, "Source: `internal/storage/types.go:4`")
+}
+
+func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"),
+		"module example.com/unobin-library-cloud\n\ngo 1.26\n")
+	writeLibraryPackage(t, dir, "s3", "Bucket", "bucket")
+	writeLibraryPackage(t, dir, "ec2", "Instance", "instance")
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir: dir,
+		OutDir:  out,
+		Libraries: []LibraryOptions{
+			{
+				Title:       "S3",
+				PackageDir:  "s3",
+				ModulePath:  "example.com/unobin-library-cloud//s3",
+				ImportAlias: "aws-s3",
+			},
+			{
+				Title:       "EC2",
+				PackageDir:  "ec2",
+				ModulePath:  "example.com/unobin-library-cloud//ec2",
+				ImportAlias: "aws-ec2",
+			},
+		},
+		Extra: []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	index, err := os.ReadFile(filepath.Join(out, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(index), "- [S3](s3/index.md) - `aws-s3: '")
+	assertContains(t, string(index), "- [EC2](ec2/index.md) - `aws-ec2: '")
+
+	summary, err := os.ReadFile(filepath.Join(out, "SUMMARY.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(summary), "* [Overview](index.md)")
+	assertContains(t, string(summary), strings.Join([]string{
+		"* S3",
+		"    * [Overview](s3/index.md)",
+		"    * [Resources](s3/resources/index.md)",
+		"        * [bucket](s3/resources/bucket.md)",
+	}, "\n"))
+	assertContains(t, string(summary), strings.Join([]string{
+		"* EC2",
+		"    * [Overview](ec2/index.md)",
+		"    * [Resources](ec2/resources/index.md)",
+		"        * [instance](ec2/resources/instance.md)",
+	}, "\n"))
+
+	if _, err := os.Stat(filepath.Join(out, "s3", "SUMMARY.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected no nested SUMMARY.md, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "s3", "resources", "SUMMARY.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected no nested resources SUMMARY.md, got %v", err)
+	}
+
+	serviceIndex, err := os.ReadFile(filepath.Join(out, "s3", "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(serviceIndex), "# S3")
+	assertContains(t, string(serviceIndex), "aws-s3: 'example.com/unobin-library-cloud//s3'")
+
+	kind, err := os.ReadFile(filepath.Join(out, "s3", "resources", "bucket.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(kind), "# aws-s3.bucket resource")
+	assertContains(t, string(kind), "aws-s3: 'example.com/unobin-library-cloud//s3'")
+}
+
+func TestGenerateReadsCollectionFile(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"),
+		"module example.com/unobin-library-cloud\n\ngo 1.26\n")
+	writeLibraryPackage(t, dir, "s3", "Bucket", "bucket")
+	writeTestFile(t, filepath.Join(dir, "docs-libraries.json"), `{
+  "libraries": [
+    {
+      "title": "S3",
+      "package": "s3",
+      "module": "example.com/unobin-library-cloud//s3",
+      "alias": "aws-s3"
+    }
+  ]
+}
+`)
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir:        dir,
+		OutDir:         out,
+		CollectionPath: "docs-libraries.json",
+		Extra:          []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(out, "s3", "resources", "bucket.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(got), "# aws-s3.bucket resource")
 }
 
 func TestFindUnobinModuleRootDownloadsMissingModule(t *testing.T) {
@@ -791,6 +976,30 @@ func TestWriteConstraintsRendersGroupedCards(t *testing.T) {
 	if got != want {
 		t.Fatalf("expected constraint output:\n%s\n\ngot:\n%s", want, got)
 	}
+}
+
+func writeLibraryPackage(t *testing.T, root, dirName, typeName, kind string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(root, dirName, "library.go"), fmt.Sprintf(`package %[1]s
+
+import "github.com/cloudboss/unobin/pkg/runtime"
+
+type %[2]s struct {
+	Name string `+"`"+`ub:"name"`+"`"+`
+}
+
+type %[2]sOutput struct {
+	ID string `+"`"+`ub:"id"`+"`"+`
+}
+
+func Library() *runtime.Library {
+	return &runtime.Library{
+		Resources: map[string]runtime.ResourceRegistration{
+			%[3]q: runtime.MakeResource[%[2]s, *%[2]sOutput, runtime.NoConfig, *%[2]s](),
+		},
+	}
+}
+`, dirName, typeName, kind))
 }
 
 func writeTestFile(t *testing.T, path, content string) {

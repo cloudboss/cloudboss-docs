@@ -16,13 +16,21 @@ import (
 )
 
 type renderer struct {
-	rootDir     string
-	outDir      string
-	modulePath  string
-	importAlias string
-	schema      *runtime.LibrarySchema
-	index       *goschema.SourceIndex
-	comments    *commentReader
+	title                string
+	rootDir              string
+	outDir               string
+	modulePath           string
+	importAlias          string
+	configurationImports []configImport
+	omitSummaries        bool
+	schema               *runtime.LibrarySchema
+	index                *goschema.SourceIndex
+	comments             *commentReader
+}
+
+type configImport struct {
+	Alias      string
+	ModulePath string
 }
 
 type category struct {
@@ -37,6 +45,9 @@ type category struct {
 func (r renderer) renderAll() error {
 	categories := nonemptyCategories(r.categories())
 	if err := r.writeReferenceIndex(categories); err != nil {
+		return err
+	}
+	if err := r.writeSummary(categories, true); err != nil {
 		return err
 	}
 	if r.schema.HasConfiguration {
@@ -55,6 +66,43 @@ func (r renderer) renderAll() error {
 		}
 	}
 	return nil
+}
+
+func (r renderer) renderCollectionLibrary(writeConfig bool) error {
+	r.omitSummaries = true
+	categories := nonemptyCategories(r.categories())
+	if err := r.writeLibraryIndex(categories, writeConfig); err != nil {
+		return err
+	}
+	if writeConfig && r.schema.HasConfiguration {
+		if err := r.writeConfiguration(); err != nil {
+			return err
+		}
+	}
+	for _, cat := range categories {
+		if err := r.writeCategory(cat); err != nil {
+			return err
+		}
+	}
+	if len(r.schema.Functions) > 0 {
+		if err := r.writeFunctions(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l libraryDoc) renderer() renderer {
+	return renderer{
+		title:       l.title,
+		rootDir:     l.rootDir,
+		outDir:      l.outDir,
+		modulePath:  l.modulePath,
+		importAlias: l.importAlias,
+		schema:      l.schema,
+		index:       l.index,
+		comments:    l.comments,
+	}
 }
 
 func (r renderer) categories() []category {
@@ -98,7 +146,7 @@ func nonemptyCategories(categories []category) []category {
 
 func (r renderer) writeReferenceIndex(categories []category) error {
 	var b strings.Builder
-	b.WriteString("# Reference\n\n")
+	b.WriteString("# Overview\n\n")
 	b.WriteString("These pages are generated from the library source. ")
 	b.WriteString("They list exported kinds and functions, including input fields, ")
 	b.WriteString("output fields, constraints, defaults, and sensitive fields when present.\n\n")
@@ -114,13 +162,167 @@ func (r renderer) writeReferenceIndex(categories []category) error {
 	return writeFile(filepath.Join(r.outDir, "index.md"), b.String())
 }
 
+func (r renderer) writeSummary(categories []category, includeConfiguration bool) error {
+	var b strings.Builder
+	b.WriteString("* [Overview](index.md)\n")
+	if includeConfiguration && r.schema.HasConfiguration {
+		b.WriteString("* [Configuration](configuration.md)\n")
+	}
+	for _, cat := range categories {
+		writeCategorySummary(&b, "", cat, sortedNames(cat.TypeSchema))
+	}
+	if len(r.schema.Functions) > 0 {
+		writeNamesSummary(&b, "", "Functions", "functions", sortedNames(r.schema.Functions))
+	}
+	return writeFile(filepath.Join(r.outDir, "SUMMARY.md"), b.String())
+}
+
+func (r renderer) writeLibraryIndex(categories []category, includeConfiguration bool) error {
+	var b strings.Builder
+	title := r.title
+	if title == "" {
+		title = r.importAlias
+	}
+	fmt.Fprintf(&b, "# %s\n\n", title)
+	b.WriteString("Import this library as `" + r.modulePath + "`.\n\n")
+	writeImportExample(&b, r.importAlias, r.modulePath)
+	b.WriteString("\n")
+	if includeConfiguration && r.schema.HasConfiguration {
+		b.WriteString("- [Configuration](configuration.md)\n")
+	}
+	for _, cat := range categories {
+		fmt.Fprintf(&b, "- [%s](%s/index.md) (%d)\n",
+			cat.Title, cat.Dir, len(cat.TypeSchema))
+	}
+	if len(r.schema.Functions) > 0 {
+		fmt.Fprintf(&b, "- [Functions](functions/index.md) (%d)\n", len(r.schema.Functions))
+	}
+	return writeFile(filepath.Join(r.outDir, "index.md"), b.String())
+}
+
+func writeCollectionIndex(outDir string, libs []libraryDoc, hasConfiguration bool) error {
+	var b strings.Builder
+	b.WriteString("# Overview\n\n")
+	b.WriteString("Each section below documents one Unobin library import. ")
+	b.WriteString("Import only the libraries a factory uses.\n\n")
+	if hasConfiguration {
+		b.WriteString("- [Configuration](configuration.md)\n")
+	}
+	for _, lib := range libs {
+		fmt.Fprintf(&b, "- [%s](%s/index.md) - `%s: '%s'`\n",
+			lib.title, lib.slug, lib.importAlias, lib.modulePath)
+	}
+	return writeFile(filepath.Join(outDir, "index.md"), b.String())
+}
+
+func writeCollectionSummary(outDir string, libs []libraryDoc, hasConfiguration bool) error {
+	var b strings.Builder
+	b.WriteString("* [Overview](index.md)\n")
+	if hasConfiguration {
+		b.WriteString("* [Configuration](configuration.md)\n")
+	}
+	for _, lib := range libs {
+		fmt.Fprintf(&b, "* %s\n", lib.title)
+		fmt.Fprintf(&b, "    * [Overview](%s/index.md)\n", lib.slug)
+		if !hasConfiguration && lib.schema.HasConfiguration {
+			fmt.Fprintf(&b, "    * [Configuration](%s/configuration.md)\n", lib.slug)
+		}
+		for _, cat := range nonemptyCategories(lib.renderer().categories()) {
+			writeCategorySummary(
+				&b,
+				"    ",
+				categoryWithDir(cat, filepath.ToSlash(filepath.Join(lib.slug, cat.Dir))),
+				sortedNames(cat.TypeSchema),
+			)
+		}
+		if len(lib.schema.Functions) > 0 {
+			writeNamesSummary(
+				&b,
+				"    ",
+				"Functions",
+				filepath.ToSlash(filepath.Join(lib.slug, "functions")),
+				sortedNames(lib.schema.Functions),
+			)
+		}
+	}
+	return writeFile(filepath.Join(outDir, "SUMMARY.md"), b.String())
+}
+
+func categoryWithDir(cat category, dir string) category {
+	cat.Dir = dir
+	return cat
+}
+
+func writeCategorySummary(
+	b *strings.Builder,
+	indent string,
+	cat category,
+	names []string,
+) {
+	writeNamesSummary(b, indent, cat.Title, cat.Dir, names)
+}
+
+func writeNamesSummary(
+	b *strings.Builder,
+	indent string,
+	title string,
+	dir string,
+	names []string,
+) {
+	fmt.Fprintf(b, "%s* [%s](%s/index.md)\n", indent, title, dir)
+	for _, name := range names {
+		fmt.Fprintf(b, "%s    * [%s](%s/%s.md)\n", indent, name, dir, name)
+	}
+}
+
+func sharedConfiguration(libs []libraryDoc) int {
+	shared := -1
+	digest := ""
+	for i, lib := range libs {
+		if !lib.schema.HasConfiguration {
+			continue
+		}
+		if shared == -1 {
+			shared = i
+			digest = lib.schema.ConfigurationDigest
+			continue
+		}
+		if lib.schema.ConfigurationDigest != digest {
+			return -1
+		}
+	}
+	return shared
+}
+
+func configurationImports(libs []libraryDoc) []configImport {
+	imports := make([]configImport, 0, len(libs))
+	for _, lib := range libs {
+		if !lib.schema.HasConfiguration {
+			continue
+		}
+		imports = append(imports, configImport{
+			Alias:      lib.importAlias,
+			ModulePath: lib.modulePath,
+		})
+	}
+	return imports
+}
+
 func (r renderer) writeConfiguration() error {
 	var b strings.Builder
 	b.WriteString("# Configuration\n\n")
-	fmt.Fprintf(&b, "This library uses `library-config('%s')` ", r.modulePath)
-	b.WriteString("for per-alias settings. Pass a value to `library-configs:` in ")
-	b.WriteString("factory source, usually from a factory input so stack files can choose ")
-	b.WriteString("the environment-specific settings.\n")
+	if len(r.configurationImports) > 1 {
+		b.WriteString("These libraries use the same configuration schema. ")
+		b.WriteString("Use the import path for the alias being configured.\n\n")
+		for _, imp := range r.configurationImports {
+			fmt.Fprintf(&b, "- `%s`: `library-config('%s')`\n", imp.Alias, imp.ModulePath)
+		}
+	} else {
+		fmt.Fprintf(&b, "This library uses `library-config('%s')` ", r.modulePath)
+		b.WriteString("for per-alias settings. Pass a value to `library-configs:` in ")
+		b.WriteString("factory source, usually from a factory input so stack files can choose ")
+		b.WriteString("the environment-specific settings.\n")
+	}
 
 	configDoc := typeComment{}
 	if r.index != nil {
@@ -162,13 +364,15 @@ func (r renderer) writeCategory(cat category) error {
 		return err
 	}
 	names := sortedNames(cat.TypeSchema)
-	var summary strings.Builder
-	fmt.Fprintf(&summary, "* [%s](index.md)\n", cat.Title)
-	for _, name := range names {
-		fmt.Fprintf(&summary, "* [%s](%s.md)\n", name, name)
-	}
-	if err := writeFile(filepath.Join(dir, "SUMMARY.md"), summary.String()); err != nil {
-		return err
+	if !r.omitSummaries {
+		var summary strings.Builder
+		fmt.Fprintf(&summary, "* [%s](index.md)\n", cat.Title)
+		for _, name := range names {
+			fmt.Fprintf(&summary, "* [%s](%s.md)\n", name, name)
+		}
+		if err := writeFile(filepath.Join(dir, "SUMMARY.md"), summary.String()); err != nil {
+			return err
+		}
 	}
 
 	if err := r.writeCategoryIndex(cat, names); err != nil {
@@ -188,13 +392,15 @@ func (r renderer) writeFunctions() error {
 		return err
 	}
 	names := sortedNames(r.schema.Functions)
-	var summary strings.Builder
-	summary.WriteString("* [Functions](index.md)\n")
-	for _, name := range names {
-		fmt.Fprintf(&summary, "* [%s](%s.md)\n", name, name)
-	}
-	if err := writeFile(filepath.Join(dir, "SUMMARY.md"), summary.String()); err != nil {
-		return err
+	if !r.omitSummaries {
+		var summary strings.Builder
+		summary.WriteString("* [Functions](index.md)\n")
+		for _, name := range names {
+			fmt.Fprintf(&summary, "* [%s](%s.md)\n", name, name)
+		}
+		if err := writeFile(filepath.Join(dir, "SUMMARY.md"), summary.String()); err != nil {
+			return err
+		}
 	}
 	if err := r.writeFunctionsIndex(names); err != nil {
 		return err
@@ -260,6 +466,14 @@ func (r renderer) writeCategoryIndex(cat category, names []string) error {
 		fmt.Fprintf(&b, "- [`%s.%s`](%s.md)\n", r.importAlias, name, name)
 	}
 	return writeFile(filepath.Join(r.outDir, cat.Dir, "index.md"), b.String())
+}
+
+func writeImportExample(b *strings.Builder, alias string, modulePath string) {
+	b.WriteString("```\n")
+	b.WriteString("imports: {\n")
+	fmt.Fprintf(b, "  %s: '%s'\n", alias, modulePath)
+	b.WriteString("}\n")
+	b.WriteString("```\n")
 }
 
 func (r renderer) writeKind(cat category, name string, ts *runtime.TypeSchema) error {

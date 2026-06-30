@@ -22,6 +22,8 @@ func run(args []string) error {
 	root := flags.String("root", ".", "Unobin library module root")
 	out := flags.String("out", "docs/reference", "directory to write reference Markdown into")
 	flags.StringVar(out, "o", "docs/reference", "directory to write reference Markdown into")
+	packageDir := flags.String("package", "", "library package directory under root")
+	collection := flags.String("collection", "", "JSON file listing libraries")
 	modulePath := flags.String("module", "", "library module path override")
 	alias := flags.String("alias", "", "library import alias override")
 	if err := flags.Parse(args); err != nil {
@@ -31,13 +33,16 @@ func run(args []string) error {
 		return usage()
 	}
 	return docgen.Generate(docgen.Options{
-		RootDir:     *root,
-		OutDir:      *out,
-		ModulePath:  *modulePath,
-		ImportAlias: *alias,
+		RootDir:        *root,
+		OutDir:         *out,
+		PackageDir:     *packageDir,
+		CollectionPath: *collection,
+		ModulePath:     *modulePath,
+		ImportAlias:    *alias,
 	})
 }
 
 func usage() error {
-	return fmt.Errorf("usage: docgen [--root .] [--out docs/reference] [--module path] [--alias name]")
+	return fmt.Errorf("usage: docgen [--root .] [--out docs/reference] [--package dir] " +
+		"[--collection file] [--module path] [--alias name]")
 }

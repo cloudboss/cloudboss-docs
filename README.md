@@ -99,7 +99,50 @@ go run github.com/cloudboss/cloudboss-docs/unobin/cmd/docgen@unobin/v0.1.0 \
 
 Use `--alias` only when the default alias derived from the module path is not
 what the examples should show. For example, `github.com/cloudboss/unobin-library-aws`
-defaults to `aws`.
+defaults to `aws`. Use `--package` when the `Library()` function is in a package
+below the repository root:
+
+```bash
+go run github.com/cloudboss/cloudboss-docs/unobin/cmd/docgen@unobin/v0.1.0 \
+  --root . \
+  --package s3 \
+  --module github.com/cloudboss/unobin-library-aws//s3 \
+  --alias aws-s3 \
+  --out docs/reference/s3
+```
+
+A repository that publishes several Unobin libraries can generate one grouped
+reference with `--collection`. The collection file is JSON:
+
+```json
+{
+  "libraries": [
+    {
+      "title": "S3",
+      "package": "s3",
+      "module": "github.com/cloudboss/unobin-library-aws//s3",
+      "alias": "aws-s3"
+    },
+    {
+      "title": "EC2",
+      "package": "ec2",
+      "module": "github.com/cloudboss/unobin-library-aws//ec2",
+      "alias": "aws-ec2"
+    }
+  ]
+}
+```
+
+```bash
+go run github.com/cloudboss/cloudboss-docs/unobin/cmd/docgen@unobin/v0.1.0 \
+  --root . \
+  --collection docs-libraries.json \
+  --out docs/reference
+```
+
+The grouped output writes `reference/SUMMARY.md` for `mkdocs-literate-nav`, with
+one heading per library and nested resource, data source, action, and function
+pages.
 
 Enable the reference-page CSS only for Unobin library sites:
 
