@@ -88,6 +88,114 @@ func Library() *runtime.Library {
 	assertNotContains(t, text, "| Field | Type |")
 }
 
+func TestGenerateOmitsCategoryIndexPages(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"),
+		"module example.com/unobin-library-platform\n\ngo 1.26\n")
+	writeTestFile(t, filepath.Join(dir, "library.go"), `package library
+
+import "github.com/cloudboss/unobin/pkg/runtime"
+
+type Server struct {
+	Name string `+"`"+`ub:"name"`+"`"+`
+}
+
+type ServerOutput struct {
+	ID string `+"`"+`ub:"id"`+"`"+`
+}
+
+type Image struct {
+	Name string `+"`"+`ub:"name"`+"`"+`
+}
+
+type ImageOutput struct {
+	ID string `+"`"+`ub:"id"`+"`"+`
+}
+
+type Deploy struct {
+	Name string `+"`"+`ub:"name"`+"`"+`
+}
+
+type DeployOutput struct {
+	ID string `+"`"+`ub:"id"`+"`"+`
+}
+
+func Library() *runtime.Library {
+	return &runtime.Library{
+		Resources: map[string]runtime.ResourceRegistration{
+			"server": runtime.MakeResource[Server, *ServerOutput, runtime.NoConfig, *Server](),
+		},
+		DataSources: map[string]runtime.DataSourceRegistration{
+			"image": runtime.MakeDataSource[Image, *ImageOutput, runtime.NoConfig, *Image](),
+		},
+		Actions: map[string]runtime.ActionRegistration{
+			"deploy": runtime.MakeAction[Deploy, *DeployOutput, runtime.NoConfig, *Deploy](),
+		},
+	}
+}
+`)
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir: dir,
+		OutDir:  out,
+		Extra:   []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	index, err := os.ReadFile(filepath.Join(out, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(index), strings.Join([]string{
+		"- Resources (1)",
+		"  - [`platform.server`](resources/server.md)",
+	}, "\n"))
+	assertContains(t, string(index), strings.Join([]string{
+		"- Data sources (1)",
+		"  - [`platform.image`](data-sources/image.md)",
+	}, "\n"))
+	assertContains(t, string(index), strings.Join([]string{
+		"- Actions (1)",
+		"  - [`platform.deploy`](actions/deploy.md)",
+	}, "\n"))
+	assertNotContains(t, string(index), "resources/index.md")
+	assertNotContains(t, string(index), "data-sources/index.md")
+	assertNotContains(t, string(index), "actions/index.md")
+
+	summary, err := os.ReadFile(filepath.Join(out, "SUMMARY.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, string(summary), strings.Join([]string{
+		"* Resources",
+		"    * [server](resources/server.md)",
+	}, "\n"))
+	assertContains(t, string(summary), strings.Join([]string{
+		"* Data sources",
+		"    * [image](data-sources/image.md)",
+	}, "\n"))
+	assertContains(t, string(summary), strings.Join([]string{
+		"* Actions",
+		"    * [deploy](actions/deploy.md)",
+	}, "\n"))
+	assertNotContains(t, string(summary), "resources/index.md")
+	assertNotContains(t, string(summary), "data-sources/index.md")
+	assertNotContains(t, string(summary), "actions/index.md")
+
+	categoryDirs := []string{"resources", "data-sources", "actions"}
+	for _, dirName := range categoryDirs {
+		if _, err := os.Stat(filepath.Join(out, dirName, "index.md")); !os.IsNotExist(err) {
+			t.Fatalf("expected no %s index.md, got %v", dirName, err)
+		}
+		if _, err := os.Stat(filepath.Join(out, dirName, "SUMMARY.md")); !os.IsNotExist(err) {
+			t.Fatalf("expected no %s SUMMARY.md, got %v", dirName, err)
+		}
+	}
+}
+
 func TestGenerateResolvesRelativeOutDirAgainstRoot(t *testing.T) {
 	root := t.TempDir()
 	cwd := t.TempDir()

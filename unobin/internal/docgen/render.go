@@ -39,6 +39,7 @@ type category struct {
 }
 
 func (r renderer) renderAll() error {
+	r.omitCategoryIndexes = true
 	categories := nonemptyCategories(r.categories())
 	if err := r.writeReferenceIndex(categories); err != nil {
 		return err
@@ -152,6 +153,10 @@ func (r renderer) writeReferenceIndex(categories []category) error {
 		b.WriteString("- [Configuration](configuration.md)\n")
 	}
 	for _, cat := range categories {
+		if r.omitCategoryIndexes {
+			r.writeCategoryOverview(&b, cat)
+			continue
+		}
 		fmt.Fprintf(&b, "- [%s](%s/index.md) (%d)\n", cat.Title, cat.Dir, len(cat.TypeSchema))
 	}
 	if len(r.schema.Functions) > 0 {
@@ -167,6 +172,10 @@ func (r renderer) writeSummary(categories []category, includeConfiguration bool)
 		b.WriteString("* [Configuration](configuration.md)\n")
 	}
 	for _, cat := range categories {
+		if r.omitCategoryIndexes {
+			writeCategoryGroupSummary(&b, "", cat, sortedNames(cat.TypeSchema))
+			continue
+		}
 		writeCategorySummary(&b, "", cat, sortedNames(cat.TypeSchema))
 	}
 	if len(r.schema.Functions) > 0 {
@@ -384,7 +393,7 @@ func (r renderer) writeCategory(cat category) error {
 		return err
 	}
 	names := sortedNames(cat.TypeSchema)
-	if !r.omitSummaries {
+	if !r.omitSummaries && !r.omitCategoryIndexes {
 		var summary strings.Builder
 		fmt.Fprintf(&summary, "* [%s](index.md)\n", cat.Title)
 		for _, name := range names {
