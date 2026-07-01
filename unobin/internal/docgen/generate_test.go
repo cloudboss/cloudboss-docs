@@ -73,7 +73,7 @@ func Library() *runtime.Library {
 		t.Fatal(err)
 	}
 	text := string(got)
-	assertContains(t, text, "# compute.server resource")
+	assertContains(t, text, "# server resource")
 	assertContains(t, text, "Example usage:\n\n```\nimports: {\n")
 	assertContains(t, text, "  compute: 'example.com/unobin-library-compute'\n}")
 	assertContains(t, text, "resources: {\n")
@@ -571,7 +571,7 @@ func Library() *runtime.Library {
 		t.Fatal(err)
 	}
 	text := string(got)
-	assertContains(t, text, "# aws-s3.bucket resource")
+	assertContains(t, text, "# bucket resource")
 	assertContains(t, text, "aws-s3: 'example.com/unobin-library-cloud//s3'")
 	assertContains(t, text, "Source: `internal/storage/types.go:4`")
 }
@@ -659,7 +659,7 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(kind), "# aws-s3.bucket resource")
+	assertContains(t, string(kind), "# bucket resource")
 	assertContains(t, string(kind), "aws-s3: 'example.com/unobin-library-cloud//s3'")
 }
 
@@ -797,7 +797,7 @@ func TestGenerateReadsCollectionFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(got), "# aws-s3.bucket resource")
+	assertContains(t, string(got), "# bucket resource")
 }
 
 func TestFindUnobinModuleRootDownloadsMissingModule(t *testing.T) {

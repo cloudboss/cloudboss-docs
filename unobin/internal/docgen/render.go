@@ -517,7 +517,7 @@ func writeImportExample(b *strings.Builder, alias string, modulePath string) {
 
 func (r renderer) writeKind(cat category, name string, ts *runtime.TypeSchema) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s.%s %s\n\n", r.importAlias, name, cat.Noun)
+	fmt.Fprintf(&b, "# %s %s\n\n", name, cat.Noun)
 
 	typeDoc, err := r.kindComment(cat, name)
 	if err != nil {
