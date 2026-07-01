@@ -41,7 +41,7 @@ type category struct {
 func (r renderer) renderAll() error {
 	r.omitCategoryIndexes = true
 	categories := nonemptyCategories(r.categories())
-	if err := r.writeReferenceIndex(categories); err != nil {
+	if err := r.writeLibraryIndex(); err != nil {
 		return err
 	}
 	if err := r.writeSummary(categories, true); err != nil {
@@ -69,7 +69,7 @@ func (r renderer) renderCollectionLibrary(writeConfig bool) error {
 	r.omitSummaries = true
 	r.omitCategoryIndexes = true
 	categories := nonemptyCategories(r.categories())
-	if err := r.writeLibraryIndex(categories, writeConfig); err != nil {
+	if err := r.writeLibraryIndex(); err != nil {
 		return err
 	}
 	if writeConfig && r.schema.HasConfiguration {
@@ -143,28 +143,6 @@ func nonemptyCategories(categories []category) []category {
 	return out
 }
 
-func (r renderer) writeReferenceIndex(categories []category) error {
-	var b strings.Builder
-	b.WriteString("# Overview\n\n")
-	b.WriteString("These pages are generated from the library source. ")
-	b.WriteString("They list exported kinds and functions, including input fields, ")
-	b.WriteString("output fields, constraints, defaults, and sensitive fields when present.\n\n")
-	if r.schema.HasConfiguration {
-		b.WriteString("- [Configuration](configuration.md)\n")
-	}
-	for _, cat := range categories {
-		if r.omitCategoryIndexes {
-			r.writeCategoryOverview(&b, cat)
-			continue
-		}
-		fmt.Fprintf(&b, "- [%s](%s/index.md) (%d)\n", cat.Title, cat.Dir, len(cat.TypeSchema))
-	}
-	if len(r.schema.Functions) > 0 {
-		fmt.Fprintf(&b, "- [Functions](functions/index.md) (%d)\n", len(r.schema.Functions))
-	}
-	return writeFile(filepath.Join(r.outDir, "index.md"), b.String())
-}
-
 func (r renderer) writeSummary(categories []category, includeConfiguration bool) error {
 	var b strings.Builder
 	b.WriteString("* [Overview](index.md)\n")
@@ -184,7 +162,7 @@ func (r renderer) writeSummary(categories []category, includeConfiguration bool)
 	return writeFile(filepath.Join(r.outDir, "SUMMARY.md"), b.String())
 }
 
-func (r renderer) writeLibraryIndex(categories []category, includeConfiguration bool) error {
+func (r renderer) writeLibraryIndex() error {
 	var b strings.Builder
 	title := r.title
 	if title == "" {
@@ -193,21 +171,6 @@ func (r renderer) writeLibraryIndex(categories []category, includeConfiguration 
 	fmt.Fprintf(&b, "# %s\n\n", title)
 	b.WriteString("Import this library as `" + r.modulePath + "`.\n\n")
 	writeImportExample(&b, r.importAlias, r.modulePath)
-	b.WriteString("\n")
-	if includeConfiguration && r.schema.HasConfiguration {
-		b.WriteString("- [Configuration](configuration.md)\n")
-	}
-	for _, cat := range categories {
-		if r.omitCategoryIndexes {
-			r.writeCategoryOverview(&b, cat)
-			continue
-		}
-		fmt.Fprintf(&b, "- [%s](%s/index.md) (%d)\n",
-			cat.Title, cat.Dir, len(cat.TypeSchema))
-	}
-	if len(r.schema.Functions) > 0 {
-		fmt.Fprintf(&b, "- [Functions](functions/index.md) (%d)\n", len(r.schema.Functions))
-	}
 	return writeFile(filepath.Join(r.outDir, "index.md"), b.String())
 }
 
@@ -497,14 +460,6 @@ func (r renderer) writeCategoryIndex(cat category, names []string) error {
 		fmt.Fprintf(&b, "- [`%s.%s`](%s.md)\n", r.importAlias, name, name)
 	}
 	return writeFile(filepath.Join(r.outDir, cat.Dir, "index.md"), b.String())
-}
-
-func (r renderer) writeCategoryOverview(b *strings.Builder, cat category) {
-	names := sortedNames(cat.TypeSchema)
-	fmt.Fprintf(b, "- %s (%d)\n", cat.Title, len(names))
-	for _, name := range names {
-		fmt.Fprintf(b, "  - [%s](%s/%s.md)\n", name, cat.Dir, name)
-	}
 }
 
 func writeImportExample(b *strings.Builder, alias string, modulePath string) {
