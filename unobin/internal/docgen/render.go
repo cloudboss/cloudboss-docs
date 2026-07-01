@@ -503,7 +503,7 @@ func (r renderer) writeCategoryOverview(b *strings.Builder, cat category) {
 	names := sortedNames(cat.TypeSchema)
 	fmt.Fprintf(b, "- %s (%d)\n", cat.Title, len(names))
 	for _, name := range names {
-		fmt.Fprintf(b, "  - [`%s.%s`](%s/%s.md)\n", r.importAlias, name, cat.Dir, name)
+		fmt.Fprintf(b, "  - [%s](%s/%s.md)\n", name, cat.Dir, name)
 	}
 }
 

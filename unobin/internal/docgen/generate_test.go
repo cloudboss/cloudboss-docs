@@ -151,16 +151,19 @@ func Library() *runtime.Library {
 	}
 	assertContains(t, string(index), strings.Join([]string{
 		"- Resources (1)",
-		"  - [`platform.server`](resources/server.md)",
+		"  - [server](resources/server.md)",
 	}, "\n"))
 	assertContains(t, string(index), strings.Join([]string{
 		"- Data sources (1)",
-		"  - [`platform.image`](data-sources/image.md)",
+		"  - [image](data-sources/image.md)",
 	}, "\n"))
 	assertContains(t, string(index), strings.Join([]string{
 		"- Actions (1)",
-		"  - [`platform.deploy`](actions/deploy.md)",
+		"  - [deploy](actions/deploy.md)",
 	}, "\n"))
+	assertNotContains(t, string(index), "platform.server")
+	assertNotContains(t, string(index), "platform.image")
+	assertNotContains(t, string(index), "platform.deploy")
 	assertNotContains(t, string(index), "resources/index.md")
 	assertNotContains(t, string(index), "data-sources/index.md")
 	assertNotContains(t, string(index), "actions/index.md")
@@ -647,8 +650,9 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	assertContains(t, string(serviceIndex), "aws-s3: 'example.com/unobin-library-cloud//s3'")
 	assertContains(t, string(serviceIndex), strings.Join([]string{
 		"- Resources (1)",
-		"  - [`aws-s3.bucket`](resources/bucket.md)",
+		"  - [bucket](resources/bucket.md)",
 	}, "\n"))
+	assertNotContains(t, string(serviceIndex), "aws-s3.bucket")
 	assertNotContains(t, string(serviceIndex), "resources/index.md")
 
 	kind, err := os.ReadFile(filepath.Join(out, "s3", "resources", "bucket.md"))
