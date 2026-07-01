@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -49,15 +53,16 @@ type collectionFile struct {
 }
 
 type libraryDoc struct {
-	title       string
-	slug        string
-	modulePath  string
-	importAlias string
-	rootDir     string
-	outDir      string
-	schema      *runtime.LibrarySchema
-	index       *goschema.SourceIndex
-	comments    *commentReader
+	title            string
+	slug             string
+	modulePath       string
+	importAlias      string
+	rootDir          string
+	outDir           string
+	configModulePath string
+	schema           *runtime.LibrarySchema
+	index            *goschema.SourceIndex
+	comments         *commentReader
 }
 
 // Generate writes the generated reference manual pages.
@@ -142,23 +147,14 @@ func generateCollection(
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	sharedConfig := sharedConfiguration(docs)
-	if err := writeCollectionIndex(outDir, docs, sharedConfig >= 0); err != nil {
+	if err := writeCollectionIndex(outDir, docs); err != nil {
 		return err
 	}
-	if err := writeCollectionSummary(outDir, docs, sharedConfig >= 0); err != nil {
+	if err := writeCollectionSummary(outDir, docs); err != nil {
 		return err
-	}
-	if sharedConfig >= 0 {
-		r := docs[sharedConfig].renderer()
-		r.outDir = outDir
-		r.configurationImports = configurationImports(docs)
-		if err := r.writeConfiguration(); err != nil {
-			return err
-		}
 	}
 	for _, lib := range docs {
-		if err := lib.renderer().renderCollectionLibrary(sharedConfig < 0); err != nil {
+		if err := lib.renderer().renderCollectionLibrary(true); err != nil {
 			return err
 		}
 	}
@@ -198,15 +194,20 @@ func readLibraryDoc(
 	if len(warnings) > 0 {
 		return libraryDoc{}, fmt.Errorf("read schema: %s", strings.Join(warnings, "; "))
 	}
+	configModulePath, err := configurationModulePath(rootAbs, packageAbs, modulePath, index)
+	if err != nil {
+		return libraryDoc{}, err
+	}
 	return libraryDoc{
-		title:       title,
-		slug:        slug,
-		modulePath:  modulePath,
-		importAlias: importAlias,
-		rootDir:     rootAbs,
-		schema:      schema,
-		index:       index,
-		comments:    newCommentReader(rootAbs),
+		title:            title,
+		slug:             slug,
+		modulePath:       modulePath,
+		configModulePath: configModulePath,
+		importAlias:      importAlias,
+		rootDir:          rootAbs,
+		schema:           schema,
+		index:            index,
+		comments:         newCommentReader(rootAbs),
 	}, nil
 }
 
@@ -274,6 +275,221 @@ func defaultLibrarySlug(opts LibraryOptions, importAlias string) string {
 		return slugText(opts.Title)
 	}
 	return slugText(importAlias)
+}
+
+func configurationModulePath(
+	rootAbs string,
+	packageAbs string,
+	fallback string,
+	index *goschema.SourceIndex,
+) (string, error) {
+	path, ok, err := configurationHelperModulePath(rootAbs, packageAbs)
+	if err != nil || ok {
+		return path, err
+	}
+	if index == nil || index.ConfigType.Path == "" {
+		return fallback, nil
+	}
+	return modulePathForDir(rootAbs, filepath.Dir(index.ConfigType.Path), fallback)
+}
+
+func configurationHelperModulePath(
+	rootAbs string,
+	packageAbs string,
+) (string, bool, error) {
+	pkg, err := parseConfigurationSourcePackage(packageAbs)
+	if err != nil {
+		return "", false, err
+	}
+	importPath, ok := libraryConfigurationImportPath(pkg)
+	if !ok {
+		return "", false, nil
+	}
+	if importPath == "" {
+		path, err := modulePathForDir(rootAbs, packageAbs, "")
+		return path, true, err
+	}
+	path, err := modulePathForImportPath(rootAbs, importPath)
+	return path, true, err
+}
+
+type configurationSourcePackage struct {
+	files   []*ast.File
+	imports map[string]string
+}
+
+func parseConfigurationSourcePackage(dir string) (*configurationSourcePackage, error) {
+	fset := token.NewFileSet()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []*ast.File
+	imports := map[string]string{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") ||
+			strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+		for _, imp := range file.Imports {
+			path, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				return nil, err
+			}
+			name := pathBase(path)
+			if imp.Name != nil {
+				name = imp.Name.Name
+			}
+			if name == "." || name == "_" {
+				continue
+			}
+			imports[name] = path
+		}
+	}
+	return &configurationSourcePackage{files: files, imports: imports}, nil
+}
+
+func libraryConfigurationImportPath(pkg *configurationSourcePackage) (string, bool) {
+	for _, file := range pkg.files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Name.Name != "Library" {
+				continue
+			}
+			path, ok := libraryConfigurationImportPathFromFunc(fn, pkg.imports)
+			if ok {
+				return path, true
+			}
+		}
+	}
+	return "", false
+}
+
+func libraryConfigurationImportPathFromFunc(
+	fn *ast.FuncDecl,
+	imports map[string]string,
+) (string, bool) {
+	if fn.Body == nil {
+		return "", false
+	}
+	for _, stmt := range fn.Body.List {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok {
+			continue
+		}
+		for _, result := range ret.Results {
+			lit := libraryLiteral(result)
+			if lit == nil {
+				continue
+			}
+			path, ok := libraryConfigurationImportPathFromLiteral(lit, imports)
+			if ok {
+				return path, true
+			}
+		}
+	}
+	return "", false
+}
+
+func libraryLiteral(expr ast.Expr) *ast.CompositeLit {
+	switch e := expr.(type) {
+	case *ast.UnaryExpr:
+		if e.Op == token.AND {
+			return libraryLiteral(e.X)
+		}
+	case *ast.CompositeLit:
+		return e
+	}
+	return nil
+}
+
+func libraryConfigurationImportPathFromLiteral(
+	lit *ast.CompositeLit,
+	imports map[string]string,
+) (string, bool) {
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok || keyName(kv.Key) != "Configuration" {
+			continue
+		}
+		return configurationCallImportPath(kv.Value, imports)
+	}
+	return "", false
+}
+
+func keyName(expr ast.Expr) string {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	return ident.Name
+}
+
+func configurationCallImportPath(expr ast.Expr, imports map[string]string) (string, bool) {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	switch fn := unindexedCall(call.Fun).(type) {
+	case *ast.Ident:
+		if fn.Name == "LibraryConfiguration" {
+			return "", true
+		}
+	case *ast.SelectorExpr:
+		if fn.Sel.Name != "LibraryConfiguration" {
+			return "", false
+		}
+		ident, ok := fn.X.(*ast.Ident)
+		if !ok {
+			return "", false
+		}
+		path, ok := imports[ident.Name]
+		return path, ok
+	}
+	return "", false
+}
+
+func unindexedCall(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.IndexExpr:
+		return unindexedCall(e.X)
+	case *ast.IndexListExpr:
+		return unindexedCall(e.X)
+	default:
+		return expr
+	}
+}
+
+func modulePathForDir(rootAbs string, dir string, fallback string) (string, error) {
+	rel, err := filepath.Rel(rootAbs, dir)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fallback, nil
+	}
+	return defaultModulePath(rootAbs, filepath.ToSlash(rel))
+}
+
+func modulePathForImportPath(rootAbs string, importPath string) (string, error) {
+	modulePath, err := currentModulePath(rootAbs)
+	if err != nil {
+		return "", err
+	}
+	if importPath == modulePath {
+		return modulePath, nil
+	}
+	prefix := modulePath + "/"
+	if after, ok := strings.CutPrefix(importPath, prefix); ok {
+		return modulePath + "//" + after, nil
+	}
+	return importPath, nil
 }
 
 func slugText(s string) string {

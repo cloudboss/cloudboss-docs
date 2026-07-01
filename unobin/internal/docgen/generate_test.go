@@ -511,13 +511,13 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	assertContains(t, string(summary), strings.Join([]string{
 		"* S3",
 		"    * [Overview](s3/index.md)",
-		"    * [Resources](s3/resources/index.md)",
+		"    * Resources",
 		"        * [bucket](s3/resources/bucket.md)",
 	}, "\n"))
 	assertContains(t, string(summary), strings.Join([]string{
 		"* EC2",
 		"    * [Overview](ec2/index.md)",
-		"    * [Resources](ec2/resources/index.md)",
+		"    * Resources",
 		"        * [instance](ec2/resources/instance.md)",
 	}, "\n"))
 
@@ -527,6 +527,9 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "s3", "resources", "SUMMARY.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected no nested resources SUMMARY.md, got %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(out, "s3", "resources", "index.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected no nested resources index.md, got %v", err)
+	}
 
 	serviceIndex, err := os.ReadFile(filepath.Join(out, "s3", "index.md"))
 	if err != nil {
@@ -534,6 +537,11 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	}
 	assertContains(t, string(serviceIndex), "# S3")
 	assertContains(t, string(serviceIndex), "aws-s3: 'example.com/unobin-library-cloud//s3'")
+	assertContains(t, string(serviceIndex), strings.Join([]string{
+		"- Resources (1)",
+		"  - [`aws-s3.bucket`](resources/bucket.md)",
+	}, "\n"))
+	assertNotContains(t, string(serviceIndex), "resources/index.md")
 
 	kind, err := os.ReadFile(filepath.Join(out, "s3", "resources", "bucket.md"))
 	if err != nil {
@@ -541,6 +549,108 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	}
 	assertContains(t, string(kind), "# aws-s3.bucket resource")
 	assertContains(t, string(kind), "aws-s3: 'example.com/unobin-library-cloud//s3'")
+}
+
+func TestGenerateCollectionWritesPackageConfigurationPages(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"),
+		"module example.com/unobin-library-cloud\n\ngo 1.26\n")
+	writeTestFile(t, filepath.Join(dir, "config", "config.go"), `package config
+
+import "github.com/cloudboss/unobin/pkg/sdk/cfg"
+
+type Configuration struct {
+	Region string `+"`"+`ub:"region"`+"`"+`
+}
+
+func LibraryConfiguration() *cfg.ConfigurationType[*Configuration] {
+	return &cfg.ConfigurationType[*Configuration]{
+		New: func() *Configuration {
+			return &Configuration{}
+		},
+	}
+}
+`)
+	writeLibraryPackageWithConfig(t, dir, "s3", "Bucket", "bucket")
+	writeLibraryPackageWithConfig(t, dir, "ec2", "Instance", "instance")
+
+	out := filepath.Join(dir, "docs", "reference")
+	err := Generate(Options{
+		RootDir: dir,
+		OutDir:  out,
+		Libraries: []LibraryOptions{
+			{
+				Title:       "S3",
+				PackageDir:  "s3",
+				ModulePath:  "example.com/unobin-library-cloud//s3",
+				ImportAlias: "aws-s3",
+			},
+			{
+				Title:       "EC2",
+				PackageDir:  "ec2",
+				ModulePath:  "example.com/unobin-library-cloud//ec2",
+				ImportAlias: "aws-ec2",
+			},
+		},
+		Extra: []goschema.ModuleRoot{{Path: "example.com/none", Dir: dir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	index, err := os.ReadFile(filepath.Join(out, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNotContains(t, string(index), "- [Configuration](configuration.md)")
+
+	summary, err := os.ReadFile(filepath.Join(out, "SUMMARY.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNotContains(t, string(summary), "* [Configuration](configuration.md)")
+	assertContains(t, string(summary), "    * [Configuration](s3/configuration.md)")
+	assertContains(t, string(summary), "    * [Configuration](ec2/configuration.md)")
+
+	if _, err := os.Stat(filepath.Join(out, "configuration.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected no collection configuration page, got %v", err)
+	}
+
+	s3Config, err := os.ReadFile(filepath.Join(out, "s3", "configuration.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s3Text := string(s3Config)
+	assertContains(t, s3Text, "`library-config('example.com/unobin-library-cloud//config')`")
+	assertContains(t, s3Text, strings.Join([]string{
+		"Example usage:",
+		"",
+		"```",
+		"imports: {",
+		"  aws-s3: 'example.com/unobin-library-cloud//s3'",
+		"}",
+		"",
+		"inputs: {",
+		"  aws-config: {",
+		"    type: library-config('example.com/unobin-library-cloud//config')",
+		"  }",
+		"}",
+		"",
+		"library-configs: {",
+		"  aws-s3: input.aws-config",
+		"}",
+		"```",
+	}, "\n"))
+	assertNotContains(t, s3Text, "These libraries use the same configuration schema")
+	assertNotContains(t, s3Text, "`library-config('example.com/unobin-library-cloud//s3')`")
+
+	ec2Config, err := os.ReadFile(filepath.Join(out, "ec2", "configuration.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ec2Text := string(ec2Config)
+	assertContains(t, ec2Text, "`library-config('example.com/unobin-library-cloud//config')`")
+	assertNotContains(t, ec2Text, "`library-config('example.com/unobin-library-cloud//ec2')`")
 }
 
 func TestGenerateReadsCollectionFile(t *testing.T) {
@@ -649,7 +759,12 @@ func TestWriteConfigurationUsesFieldCards(t *testing.T) {
 		},
 	}
 
-	err := renderer{outDir: dir, schema: schema, modulePath: "example.com/lib"}.writeConfiguration()
+	err := renderer{
+		outDir:      dir,
+		schema:      schema,
+		modulePath:  "example.com/lib",
+		importAlias: "lib",
+	}.writeConfiguration()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -660,6 +775,25 @@ func TestWriteConfigurationUsesFieldCards(t *testing.T) {
 	}
 	text := string(got)
 	assertContains(t, text, "`library-config('example.com/lib')`")
+	assertContains(t, text, strings.Join([]string{
+		"Example usage:",
+		"",
+		"```",
+		"imports: {",
+		"  lib: 'example.com/lib'",
+		"}",
+		"",
+		"inputs: {",
+		"  lib-config: {",
+		"    type: library-config('example.com/lib')",
+		"  }",
+		"}",
+		"",
+		"library-configs: {",
+		"  lib: input.lib-config",
+		"}",
+		"```",
+	}, "\n"))
 	assertContains(t, text, "## Fields\n\n<div class=\"ub-fields\">")
 	assertFieldCardContains(t, text, "region", "<code>optional(string)</code>")
 	assertFieldCardNotContains(t, text, "region", "ub-badge--required")
@@ -996,6 +1130,40 @@ func Library() *runtime.Library {
 	return &runtime.Library{
 		Resources: map[string]runtime.ResourceRegistration{
 			%[3]q: runtime.MakeResource[%[2]s, *%[2]sOutput, runtime.NoConfig, *%[2]s](),
+		},
+	}
+}
+`, dirName, typeName, kind))
+}
+
+func writeLibraryPackageWithConfig(t *testing.T, root, dirName, typeName, kind string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(root, dirName, "library.go"), fmt.Sprintf(`package %[1]s
+
+import (
+	cloudconfig "example.com/unobin-library-cloud/config"
+
+	"github.com/cloudboss/unobin/pkg/runtime"
+)
+
+type %[2]s struct {
+	Name string `+"`"+`ub:"name"`+"`"+`
+}
+
+type %[2]sOutput struct {
+	ID string `+"`"+`ub:"id"`+"`"+`
+}
+
+func Library() *runtime.Library {
+	return &runtime.Library{
+		Configuration: cloudconfig.LibraryConfiguration(),
+		Resources: map[string]runtime.ResourceRegistration{
+			%[3]q: runtime.MakeResource[
+				%[2]s,
+				*%[2]sOutput,
+				*cloudconfig.Configuration,
+				*%[2]s,
+			](),
 		},
 	}
 }

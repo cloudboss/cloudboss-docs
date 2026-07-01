@@ -16,21 +16,17 @@ import (
 )
 
 type renderer struct {
-	title                string
-	rootDir              string
-	outDir               string
-	modulePath           string
-	importAlias          string
-	configurationImports []configImport
-	omitSummaries        bool
-	schema               *runtime.LibrarySchema
-	index                *goschema.SourceIndex
-	comments             *commentReader
-}
-
-type configImport struct {
-	Alias      string
-	ModulePath string
+	title               string
+	rootDir             string
+	outDir              string
+	modulePath          string
+	importAlias         string
+	configModulePath    string
+	omitSummaries       bool
+	omitCategoryIndexes bool
+	schema              *runtime.LibrarySchema
+	index               *goschema.SourceIndex
+	comments            *commentReader
 }
 
 type category struct {
@@ -70,6 +66,7 @@ func (r renderer) renderAll() error {
 
 func (r renderer) renderCollectionLibrary(writeConfig bool) error {
 	r.omitSummaries = true
+	r.omitCategoryIndexes = true
 	categories := nonemptyCategories(r.categories())
 	if err := r.writeLibraryIndex(categories, writeConfig); err != nil {
 		return err
@@ -94,14 +91,15 @@ func (r renderer) renderCollectionLibrary(writeConfig bool) error {
 
 func (l libraryDoc) renderer() renderer {
 	return renderer{
-		title:       l.title,
-		rootDir:     l.rootDir,
-		outDir:      l.outDir,
-		modulePath:  l.modulePath,
-		importAlias: l.importAlias,
-		schema:      l.schema,
-		index:       l.index,
-		comments:    l.comments,
+		title:            l.title,
+		rootDir:          l.rootDir,
+		outDir:           l.outDir,
+		modulePath:       l.modulePath,
+		configModulePath: l.configModulePath,
+		importAlias:      l.importAlias,
+		schema:           l.schema,
+		index:            l.index,
+		comments:         l.comments,
 	}
 }
 
@@ -191,6 +189,10 @@ func (r renderer) writeLibraryIndex(categories []category, includeConfiguration 
 		b.WriteString("- [Configuration](configuration.md)\n")
 	}
 	for _, cat := range categories {
+		if r.omitCategoryIndexes {
+			r.writeCategoryOverview(&b, cat)
+			continue
+		}
 		fmt.Fprintf(&b, "- [%s](%s/index.md) (%d)\n",
 			cat.Title, cat.Dir, len(cat.TypeSchema))
 	}
@@ -200,14 +202,11 @@ func (r renderer) writeLibraryIndex(categories []category, includeConfiguration 
 	return writeFile(filepath.Join(r.outDir, "index.md"), b.String())
 }
 
-func writeCollectionIndex(outDir string, libs []libraryDoc, hasConfiguration bool) error {
+func writeCollectionIndex(outDir string, libs []libraryDoc) error {
 	var b strings.Builder
 	b.WriteString("# Overview\n\n")
 	b.WriteString("Each section below documents one Unobin library import. ")
 	b.WriteString("Import only the libraries a factory uses.\n\n")
-	if hasConfiguration {
-		b.WriteString("- [Configuration](configuration.md)\n")
-	}
 	for _, lib := range libs {
 		fmt.Fprintf(&b, "- [%s](%s/index.md) - `%s: '%s'`\n",
 			lib.title, lib.slug, lib.importAlias, lib.modulePath)
@@ -215,20 +214,17 @@ func writeCollectionIndex(outDir string, libs []libraryDoc, hasConfiguration boo
 	return writeFile(filepath.Join(outDir, "index.md"), b.String())
 }
 
-func writeCollectionSummary(outDir string, libs []libraryDoc, hasConfiguration bool) error {
+func writeCollectionSummary(outDir string, libs []libraryDoc) error {
 	var b strings.Builder
 	b.WriteString("* [Overview](index.md)\n")
-	if hasConfiguration {
-		b.WriteString("* [Configuration](configuration.md)\n")
-	}
 	for _, lib := range libs {
 		fmt.Fprintf(&b, "* %s\n", lib.title)
 		fmt.Fprintf(&b, "    * [Overview](%s/index.md)\n", lib.slug)
-		if !hasConfiguration && lib.schema.HasConfiguration {
+		if lib.schema.HasConfiguration {
 			fmt.Fprintf(&b, "    * [Configuration](%s/configuration.md)\n", lib.slug)
 		}
 		for _, cat := range nonemptyCategories(lib.renderer().categories()) {
-			writeCategorySummary(
+			writeCategoryGroupSummary(
 				&b,
 				"    ",
 				categoryWithDir(cat, filepath.ToSlash(filepath.Join(lib.slug, cat.Dir))),
@@ -262,6 +258,15 @@ func writeCategorySummary(
 	writeNamesSummary(b, indent, cat.Title, cat.Dir, names)
 }
 
+func writeCategoryGroupSummary(
+	b *strings.Builder,
+	indent string,
+	cat category,
+	names []string,
+) {
+	writeNamesGroupSummary(b, indent, cat.Title, cat.Dir, names)
+}
+
 func writeNamesSummary(
 	b *strings.Builder,
 	indent string,
@@ -275,54 +280,31 @@ func writeNamesSummary(
 	}
 }
 
-func sharedConfiguration(libs []libraryDoc) int {
-	shared := -1
-	digest := ""
-	for i, lib := range libs {
-		if !lib.schema.HasConfiguration {
-			continue
-		}
-		if shared == -1 {
-			shared = i
-			digest = lib.schema.ConfigurationDigest
-			continue
-		}
-		if lib.schema.ConfigurationDigest != digest {
-			return -1
-		}
+func writeNamesGroupSummary(
+	b *strings.Builder,
+	indent string,
+	title string,
+	dir string,
+	names []string,
+) {
+	fmt.Fprintf(b, "%s* %s\n", indent, title)
+	for _, name := range names {
+		fmt.Fprintf(b, "%s    * [%s](%s/%s.md)\n", indent, name, dir, name)
 	}
-	return shared
-}
-
-func configurationImports(libs []libraryDoc) []configImport {
-	imports := make([]configImport, 0, len(libs))
-	for _, lib := range libs {
-		if !lib.schema.HasConfiguration {
-			continue
-		}
-		imports = append(imports, configImport{
-			Alias:      lib.importAlias,
-			ModulePath: lib.modulePath,
-		})
-	}
-	return imports
 }
 
 func (r renderer) writeConfiguration() error {
 	var b strings.Builder
 	b.WriteString("# Configuration\n\n")
-	if len(r.configurationImports) > 1 {
-		b.WriteString("These libraries use the same configuration schema. ")
-		b.WriteString("Use the import path for the alias being configured.\n\n")
-		for _, imp := range r.configurationImports {
-			fmt.Fprintf(&b, "- `%s`: `library-config('%s')`\n", imp.Alias, imp.ModulePath)
-		}
-	} else {
-		fmt.Fprintf(&b, "This library uses `library-config('%s')` ", r.modulePath)
-		b.WriteString("for per-alias settings. Pass a value to `library-configs:` in ")
-		b.WriteString("factory source, usually from a factory input so stack files can choose ")
-		b.WriteString("the environment-specific settings.\n")
+	modulePath := r.configModulePath
+	if modulePath == "" {
+		modulePath = r.modulePath
 	}
+	fmt.Fprintf(&b, "This library uses `library-config('%s')` ", modulePath)
+	b.WriteString("for per-alias settings. Pass a value to `library-configs:` in ")
+	b.WriteString("factory source, usually from a factory input so stack files can choose ")
+	b.WriteString("the environment-specific settings.\n")
+	writeConfigurationExample(&b, r.importAlias, r.modulePath, modulePath)
 
 	configDoc := typeComment{}
 	if r.index != nil {
@@ -358,6 +340,44 @@ func (r renderer) writeConfiguration() error {
 	return writeFile(filepath.Join(r.outDir, "configuration.md"), b.String())
 }
 
+func writeConfigurationExample(
+	b *strings.Builder,
+	importAlias string,
+	importPath string,
+	configPath string,
+) {
+	if importAlias == "" {
+		importAlias = defaultImportAlias(importPath)
+	}
+	inputName := configurationInputName(importAlias)
+	b.WriteString("\nExample usage:\n\n")
+	b.WriteString("```\n")
+	b.WriteString("imports: {\n")
+	fmt.Fprintf(b, "  %s: '%s'\n", importAlias, importPath)
+	b.WriteString("}\n\n")
+	b.WriteString("inputs: {\n")
+	fmt.Fprintf(b, "  %s: {\n", inputName)
+	fmt.Fprintf(b, "    type:    library-config('%s')\n", configPath)
+	b.WriteString("    default: {}\n")
+	b.WriteString("  }\n")
+	b.WriteString("}\n\n")
+	b.WriteString("library-configs: {\n")
+	fmt.Fprintf(b, "  %s: input.%s\n", importAlias, inputName)
+	b.WriteString("}\n")
+	b.WriteString("```\n")
+}
+
+func configurationInputName(importAlias string) string {
+	prefix, _, found := strings.Cut(importAlias, "-")
+	if found && prefix != "" {
+		return prefix + "-config"
+	}
+	if importAlias == "" {
+		return "config"
+	}
+	return importAlias + "-config"
+}
+
 func (r renderer) writeCategory(cat category) error {
 	dir := filepath.Join(r.outDir, cat.Dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -375,8 +395,10 @@ func (r renderer) writeCategory(cat category) error {
 		}
 	}
 
-	if err := r.writeCategoryIndex(cat, names); err != nil {
-		return err
+	if !r.omitCategoryIndexes {
+		if err := r.writeCategoryIndex(cat, names); err != nil {
+			return err
+		}
 	}
 	for _, name := range names {
 		if err := r.writeKind(cat, name, cat.TypeSchema[name]); err != nil {
@@ -466,6 +488,14 @@ func (r renderer) writeCategoryIndex(cat category, names []string) error {
 		fmt.Fprintf(&b, "- [`%s.%s`](%s.md)\n", r.importAlias, name, name)
 	}
 	return writeFile(filepath.Join(r.outDir, cat.Dir, "index.md"), b.String())
+}
+
+func (r renderer) writeCategoryOverview(b *strings.Builder, cat category) {
+	names := sortedNames(cat.TypeSchema)
+	fmt.Fprintf(b, "- %s (%d)\n", cat.Title, len(names))
+	for _, name := range names {
+		fmt.Fprintf(b, "  - [`%s.%s`](%s/%s.md)\n", r.importAlias, name, cat.Dir, name)
+	}
 }
 
 func writeImportExample(b *strings.Builder, alias string, modulePath string) {
