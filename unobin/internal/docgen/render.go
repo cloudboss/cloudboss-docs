@@ -470,8 +470,13 @@ func writeImportExample(b *strings.Builder, alias string, modulePath string) {
 	b.WriteString("```\n")
 }
 
+func writePageTitle(b *strings.Builder, title string) {
+	fmt.Fprintf(b, "---\ntitle: '%s'\n---\n\n", strings.ReplaceAll(title, "'", "''"))
+}
+
 func (r renderer) writeKind(cat category, name string, ts *runtime.TypeSchema) error {
 	var b strings.Builder
+	writePageTitle(&b, name)
 	fmt.Fprintf(&b, "# %s %s\n\n", name, cat.Noun)
 
 	typeDoc, err := r.kindComment(cat, name)

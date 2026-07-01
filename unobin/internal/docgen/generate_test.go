@@ -61,7 +61,18 @@ func Library() *runtime.Library {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(index), "# Overview")
+	assertEqual(t, string(index), strings.Join([]string{
+		"# compute",
+		"",
+		"Import this library as `example.com/unobin-library-compute`.",
+		"",
+		"```",
+		"imports: {",
+		"  compute: 'example.com/unobin-library-compute'",
+		"}",
+		"```",
+		"",
+	}, "\n"))
 	summary, err := os.ReadFile(filepath.Join(out, "SUMMARY.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +84,13 @@ func Library() *runtime.Library {
 		t.Fatal(err)
 	}
 	text := string(got)
-	assertContains(t, text, "# server resource")
+	assertContains(t, text, strings.Join([]string{
+		"---",
+		"title: 'server'",
+		"---",
+		"",
+		"# server resource",
+	}, "\n"))
 	assertContains(t, text, "Example usage:\n\n```\nimports: {\n")
 	assertContains(t, text, "  compute: 'example.com/unobin-library-compute'\n}")
 	assertContains(t, text, "resources: {\n")
@@ -149,44 +166,33 @@ func Library() *runtime.Library {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(index), strings.Join([]string{
-		"- Resources (1)",
-		"  - [server](resources/server.md)",
+	assertEqual(t, string(index), strings.Join([]string{
+		"# platform",
+		"",
+		"Import this library as `example.com/unobin-library-platform`.",
+		"",
+		"```",
+		"imports: {",
+		"  platform: 'example.com/unobin-library-platform'",
+		"}",
+		"```",
+		"",
 	}, "\n"))
-	assertContains(t, string(index), strings.Join([]string{
-		"- Data sources (1)",
-		"  - [image](data-sources/image.md)",
-	}, "\n"))
-	assertContains(t, string(index), strings.Join([]string{
-		"- Actions (1)",
-		"  - [deploy](actions/deploy.md)",
-	}, "\n"))
-	assertNotContains(t, string(index), "platform.server")
-	assertNotContains(t, string(index), "platform.image")
-	assertNotContains(t, string(index), "platform.deploy")
-	assertNotContains(t, string(index), "resources/index.md")
-	assertNotContains(t, string(index), "data-sources/index.md")
-	assertNotContains(t, string(index), "actions/index.md")
 
 	summary, err := os.ReadFile(filepath.Join(out, "SUMMARY.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(summary), strings.Join([]string{
+	assertEqual(t, string(summary), strings.Join([]string{
+		"* [Overview](index.md)",
 		"* Resources",
 		"    * [server](resources/server.md)",
-	}, "\n"))
-	assertContains(t, string(summary), strings.Join([]string{
 		"* Data sources",
 		"    * [image](data-sources/image.md)",
-	}, "\n"))
-	assertContains(t, string(summary), strings.Join([]string{
 		"* Actions",
 		"    * [deploy](actions/deploy.md)",
+		"",
 	}, "\n"))
-	assertNotContains(t, string(summary), "resources/index.md")
-	assertNotContains(t, string(summary), "data-sources/index.md")
-	assertNotContains(t, string(summary), "actions/index.md")
 
 	categoryDirs := []string{"resources", "data-sources", "actions"}
 	for _, dirName := range categoryDirs {
@@ -437,7 +443,18 @@ func Library() *runtime.Library {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(index), "- [Configuration](configuration.md)")
+	assertEqual(t, string(index), strings.Join([]string{
+		"# lib",
+		"",
+		"Import this library as `example.com/lib`.",
+		"",
+		"```",
+		"imports: {",
+		"  lib: 'example.com/lib'",
+		"}",
+		"```",
+		"",
+	}, "\n"))
 
 	got, err := os.ReadFile(filepath.Join(out, "configuration.md"))
 	if err != nil {
@@ -503,8 +520,18 @@ func Library() *runtime.Library {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(index), "- [Functions](functions/index.md) (1)")
-	assertNotContains(t, string(index), "Resources")
+	assertEqual(t, string(index), strings.Join([]string{
+		"# std",
+		"",
+		"Import this library as `example.com/unobin-library-std`.",
+		"",
+		"```",
+		"imports: {",
+		"  std: 'example.com/unobin-library-std'",
+		"}",
+		"```",
+		"",
+	}, "\n"))
 
 	got, err := os.ReadFile(filepath.Join(out, "functions", "join.md"))
 	if err != nil {
@@ -646,14 +673,18 @@ func TestGenerateCollectionWritesGroupedSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, string(serviceIndex), "# S3")
-	assertContains(t, string(serviceIndex), "aws-s3: 'example.com/unobin-library-cloud//s3'")
-	assertContains(t, string(serviceIndex), strings.Join([]string{
-		"- Resources (1)",
-		"  - [bucket](resources/bucket.md)",
+	assertEqual(t, string(serviceIndex), strings.Join([]string{
+		"# S3",
+		"",
+		"Import this library as `example.com/unobin-library-cloud//s3`.",
+		"",
+		"```",
+		"imports: {",
+		"  aws-s3: 'example.com/unobin-library-cloud//s3'",
+		"}",
+		"```",
+		"",
 	}, "\n"))
-	assertNotContains(t, string(serviceIndex), "aws-s3.bucket")
-	assertNotContains(t, string(serviceIndex), "resources/index.md")
 
 	kind, err := os.ReadFile(filepath.Join(out, "s3", "resources", "bucket.md"))
 	if err != nil {
@@ -744,7 +775,8 @@ func LibraryConfiguration() *cfg.ConfigurationType[*Configuration] {
 		"",
 		"inputs: {",
 		"  aws-config: {",
-		"    type: library-config('example.com/unobin-library-cloud//config')",
+		"    type:    library-config('example.com/unobin-library-cloud//config')",
+		"    default: {}",
 		"  }",
 		"}",
 		"",
@@ -897,7 +929,8 @@ func TestWriteConfigurationUsesFieldCards(t *testing.T) {
 		"",
 		"inputs: {",
 		"  lib-config: {",
-		"    type: library-config('example.com/lib')",
+		"    type:    library-config('example.com/lib')",
+		"    default: {}",
 		"  }",
 		"}",
 		"",
@@ -1289,6 +1322,13 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertEqual(t *testing.T, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
 
