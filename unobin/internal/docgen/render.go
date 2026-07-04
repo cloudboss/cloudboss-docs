@@ -1038,20 +1038,37 @@ func constraintSummaryHTML(spec lang.ConstraintSpec) string {
 		)
 	}
 	if len(spec.Fields) > 0 {
-		return fmt.Sprintf("%s %s.",
-			constraintSummaryTitle(spec.Kind),
-			fieldListHTML(spec.Fields, constraintFieldConjunction(spec.Kind)),
-		)
+		return constraintFieldsSummaryHTML(spec.Kind, spec.Fields)
 	}
 	return html.EscapeString(sentenceText(constraintTitle(spec.Kind)))
 }
 
+func constraintFieldsSummaryHTML(kind string, fields []string) string {
+	switch kind {
+	case "required-with", "forbidden-with":
+		if len(fields) < 2 {
+			return fmt.Sprintf("%s %s.",
+				constraintTitle(kind),
+				fieldListHTML(fields, constraintFieldConjunction(kind)),
+			)
+		}
+		return fmt.Sprintf("%s %s: %s.",
+			constraintTitle(kind),
+			strongHTML(displayFieldRef(fields[0])),
+			fieldListHTML(fields[1:], "and"),
+		)
+	default:
+		return fmt.Sprintf("%s %s.",
+			constraintSummaryTitle(kind),
+			fieldListHTML(fields, constraintFieldConjunction(kind)),
+		)
+	}
+}
+
 func constraintSummaryTitle(kind string) string {
 	switch kind {
-	case "required-together", "required-with":
+	case "required-together":
 		return "Required together:"
-	case "forbidden-with":
-		return "Forbidden together:"
 	default:
 		return constraintTitle(kind)
 	}

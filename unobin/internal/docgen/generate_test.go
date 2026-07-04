@@ -1111,8 +1111,16 @@ func TestWriteConstraintsRendersGroupedCards(t *testing.T) {
 			Fields: []string{"input.carrier-gateway-id", "input.gateway-id", "input.nat-gateway-id"},
 		},
 		{
-			Kind:   "required-with",
-			Fields: []string{"input.certificate-body", "input.private-key"},
+			Kind:   "required-together",
+			Fields: []string{"input.region", "input.account-id", "input.partition"},
+		},
+		{
+			Kind: "required-with",
+			Fields: []string{
+				"input.certificate-body",
+				"input.private-key",
+				"input.certificate-chain",
+			},
 		},
 		{
 			Kind: "forbidden-with",
@@ -1242,11 +1250,17 @@ func TestWriteConstraintsRendersGroupedCards(t *testing.T) {
 		"</div>",
 		"<div class=\"ub-constraint\">",
 		"<p class=\"ub-constraint-summary\">Required together: " +
-			"<strong>certificate-body</strong> and <strong>private-key</strong>.</p>",
+			"<strong>region</strong>, <strong>account-id</strong>, and " +
+			"<strong>partition</strong>.</p>",
 		"</div>",
 		"<div class=\"ub-constraint\">",
-		"<p class=\"ub-constraint-summary\">Forbidden together: " +
-			"<strong>domain-name</strong>, <strong>certificate-body</strong>, " +
+		"<p class=\"ub-constraint-summary\">Required with " +
+			"<strong>certificate-body</strong>: <strong>private-key</strong> and " +
+			"<strong>certificate-chain</strong>.</p>",
+		"</div>",
+		"<div class=\"ub-constraint\">",
+		"<p class=\"ub-constraint-summary\">Forbidden with " +
+			"<strong>domain-name</strong>: <strong>certificate-body</strong>, " +
 			"<strong>private-key</strong>, and <strong>certificate-chain</strong>.</p>",
 		"</div>",
 		"</section>",
