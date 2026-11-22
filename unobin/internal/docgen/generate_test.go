@@ -416,8 +416,10 @@ func (c Configuration) Constraints() []constraint.Constraint {
 		constraint.Must(constraint.NotEmpty(c.Region)).Message("region is required"),
 		constraint.Must(constraint.AtLeast(c.MaxAttempts, 1)).
 			Message("max-attempts must be positive"),
-		constraint.Must(constraint.IsFormat(c.Timeout, constraint.FormatPositiveDuration)).
-			Message("timeout must be a positive duration"),
+		constraint.Must(constraint.IsFormat(c.Timeout, constraint.FormatPositiveDuration)),
+		constraint.Must(constraint.IsMatch(c.Profile, "^[a-z][a-z0-9-]*$")),
+		constraint.Must(constraint.Equals("input.fake", c.Profile)).
+			Message("profile must equal input.fake"),
 	}
 }
 
@@ -483,6 +485,14 @@ func Library() *runtime.Library {
 	assertContains(t, text,
 		"<p class=\"ub-constraint-summary\"><strong>max-attempts</strong> must be positive.</p>")
 	assertContains(t, text, "@core.is-format(input.timeout, &#39;positive-duration&#39;)")
+	assertContains(t, text, "<p class=\"ub-constraint-summary\">If set, "+
+		"<strong>timeout</strong> must be a positive duration.</p>")
+	assertContains(t, text, "<p class=\"ub-constraint-summary\">If set, "+
+		"<strong>profile</strong> must match the specified pattern.</p>")
+	assertContains(t, text, "@core.is-match(input.profile, &#39;^[a-z][a-z0-9-]*$&#39;)")
+	assertNotContains(t, text, `data-constraint-group="fake"`)
+	assertContains(t, text, "<p class=\"ub-constraint-summary\">"+
+		"<strong>profile</strong> must equal <code>input.fake</code>.</p>")
 }
 
 func TestGenerateWritesFunctionReference(t *testing.T) {

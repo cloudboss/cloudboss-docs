@@ -5,10 +5,10 @@ import (
 	"html"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/cloudboss/unobin/pkg/constraint"
 	"github.com/cloudboss/unobin/pkg/goschema"
 	"github.com/cloudboss/unobin/pkg/lang"
 	"github.com/cloudboss/unobin/pkg/runtime"
@@ -1040,7 +1040,52 @@ func constraintSummaryHTML(spec lang.ConstraintSpec) string {
 	if len(spec.Fields) > 0 {
 		return constraintFieldsSummaryHTML(spec.Kind, spec.Fields)
 	}
+	when := strings.TrimSpace(spec.When)
+	if spec.Kind == "predicate" && (when == "" || when == "true") {
+		if summary := stringPredicateSummaryHTML(parseConstraintExpression(spec.Require)); summary != "" {
+			return summary
+		}
+		return "Requirement."
+	}
 	return html.EscapeString(sentenceText(constraintTitle(spec.Kind)))
+}
+
+var stringFormatDescriptions = map[string]string{
+	constraint.FormatRegex:            "a valid Go regular expression",
+	constraint.FormatIP:               "an IPv4 or IPv6 address",
+	constraint.FormatCIDR:             "an IPv4 or IPv6 prefix in CIDR notation",
+	constraint.FormatBase64:           "standard padded base64 text",
+	constraint.FormatPositiveDuration: "a positive duration",
+	constraint.FormatDateTime:         "an RFC3339 date and time",
+	constraint.FormatJSON:             "valid JSON text",
+	constraint.FormatInt64:            "a base-10 signed 64-bit integer",
+}
+
+func stringPredicateSummaryHTML(expr lang.Expr) string {
+	call, ok := expr.(*lang.Call)
+	if !ok || call.Library == nil || call.Library.Name != lang.CoreNamespace || len(call.Args) != 2 {
+		return ""
+	}
+	field, ok := call.Args[0].(*lang.DotPath)
+	if !ok {
+		return ""
+	}
+	name, err := lang.FormatExpr(field)
+	if err != nil {
+		return ""
+	}
+	subject := "If set, " + strongHTML(displayFieldRef(name))
+	switch call.Func.Name {
+	case "is-match":
+		return subject + " must match the specified pattern."
+	case "is-format":
+		if format, ok := call.Args[1].(*lang.StringLit); ok {
+			if description, ok := stringFormatDescriptions[format.Value]; ok {
+				return subject + " must be " + description + "."
+			}
+		}
+	}
+	return ""
 }
 
 func constraintFieldsSummaryHTML(kind string, fields []string) string {
@@ -1202,26 +1247,22 @@ func displayFieldRef(ref string) string {
 
 func constraintSummaryFieldNames(spec lang.ConstraintSpec) []string {
 	seen := map[string]bool{}
-	add := func(field string) {
-		field = constraintFieldSegment(field)
-		if field == "" || seen[field] {
-			return
+	addInputFields := func(src string) {
+		for _, field := range inputFields(src) {
+			seen[field] = true
 		}
-		seen[field] = true
 	}
-	add(spec.ForEach)
+	addInputFields(spec.ForEach)
 	for _, level := range spec.ForEachLevels {
-		add(level.In)
+		addInputFields(level.In)
 	}
 	for _, field := range spec.Fields {
-		add(field)
+		if name := fieldSegment(field); name != "" {
+			seen[name] = true
+		}
 	}
-	for _, field := range inputFields(spec.When) {
-		add(field)
-	}
-	for _, field := range inputFields(spec.Require) {
-		add(field)
-	}
+	addInputFields(spec.When)
+	addInputFields(spec.Require)
 	return sortedLongestFirst(seen)
 }
 
@@ -1252,34 +1293,23 @@ func sortedLongestFirst(values map[string]bool) []string {
 
 func stringLiterals(src string) []string {
 	var out []string
-	for i := 0; i < len(src); i++ {
-		if src[i] != '\'' {
-			continue
+	lang.Walk(parseConstraintExpression(src), func(expr lang.Expr) {
+		if literal, ok := expr.(*lang.StringLit); ok && literal.Value != "" {
+			out = append(out, literal.Value)
 		}
-		literal, end, ok := readSingleQuoted(src, i)
-		if !ok {
-			continue
-		}
-		out = append(out, literal)
-		i = end
-	}
+	})
 	return out
 }
 
-func readSingleQuoted(src string, start int) (string, int, bool) {
-	var b strings.Builder
-	for i := start + 1; i < len(src); i++ {
-		if src[i] == '\\' && i+1 < len(src) {
-			i++
-			b.WriteByte(src[i])
-			continue
-		}
-		if src[i] == '\'' {
-			return b.String(), i, true
-		}
-		b.WriteByte(src[i])
+func parseConstraintExpression(src string) lang.Expr {
+	if strings.TrimSpace(src) == "" {
+		return nil
 	}
-	return "", start, false
+	expr, err := lang.ParseExpr("", []byte(src))
+	if err != nil {
+		return nil
+	}
+	return expr
 }
 
 func constraintMessageHTML(text string, fields []string, literals []string) string {
@@ -1358,21 +1388,12 @@ func forEachLevelName(name string) string {
 	return "@" + name
 }
 
-var inputRefPattern = regexp.MustCompile(`\binput\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)`)
-
-func constraintFieldSegment(src string) string {
-	if field := firstInputField(src); field != "" {
-		return field
-	}
-	return fieldSegment(src)
-}
-
 func constraintGroupKey(spec lang.ConstraintSpec) string {
-	if field := constraintFieldSegment(spec.ForEach); field != "" {
+	if field := firstInputField(spec.ForEach); field != "" {
 		return field
 	}
 	if len(spec.ForEachLevels) > 0 {
-		if field := constraintFieldSegment(spec.ForEachLevels[0].In); field != "" {
+		if field := firstInputField(spec.ForEachLevels[0].In); field != "" {
 			return field
 		}
 	}
@@ -1407,14 +1428,14 @@ func fieldGroupFromFields(fields []string) string {
 }
 
 func inputFields(src string) []string {
-	matches := inputRefPattern.FindAllStringSubmatch(src, -1)
-	fields := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
+	var fields []string
+	lang.Walk(parseConstraintExpression(src), func(expr lang.Expr) {
+		if path, ok := expr.(*lang.DotPath); ok && path.Root.Name == "input" && len(path.Segments) > 0 {
+			if name := path.Segments[0].Name; name != "" {
+				fields = append(fields, name)
+			}
 		}
-		fields = append(fields, "input."+match[1])
-	}
+	})
 	return fields
 }
 
@@ -1423,7 +1444,7 @@ func firstInputField(src string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	return fieldSegment(fields[0])
+	return fields[0]
 }
 
 func fieldSegment(ref string) string {
