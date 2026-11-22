@@ -397,6 +397,7 @@ import (
 type Configuration struct {
 	Region      string
 	Profile     *string
+	Timeout     *string
 	Tags        map[string]string
 	MaybeTags   *map[string]string `+"`"+`ub:"maybe-tags"`+"`"+`
 	MaxAttempts int64              `+"`"+`ub:"max-attempts"`+"`"+`
@@ -415,6 +416,8 @@ func (c Configuration) Constraints() []constraint.Constraint {
 		constraint.Must(constraint.NotEmpty(c.Region)).Message("region is required"),
 		constraint.Must(constraint.AtLeast(c.MaxAttempts, 1)).
 			Message("max-attempts must be positive"),
+		constraint.Must(constraint.IsFormat(c.Timeout, constraint.FormatPositiveDuration)).
+			Message("timeout must be a positive duration"),
 	}
 }
 
@@ -479,6 +482,7 @@ func Library() *runtime.Library {
 		"<p class=\"ub-constraint-summary\"><strong>region</strong> is required.</p>")
 	assertContains(t, text,
 		"<p class=\"ub-constraint-summary\"><strong>max-attempts</strong> must be positive.</p>")
+	assertContains(t, text, "@core.is-format(input.timeout, &#39;positive-duration&#39;)")
 }
 
 func TestGenerateWritesFunctionReference(t *testing.T) {
@@ -700,10 +704,17 @@ func TestGenerateCollectionWritesPackageConfigurationPages(t *testing.T) {
 		"module example.com/unobin-library-cloud\n\ngo 1.26\n")
 	writeTestFile(t, filepath.Join(dir, "config", "config.go"), `package config
 
-import "github.com/cloudboss/unobin/pkg/sdk/cfg"
+import (
+	"github.com/cloudboss/unobin/pkg/runtime"
+	"github.com/cloudboss/unobin/pkg/sdk/cfg"
+)
 
 type Configuration struct {
 	Region string `+"`"+`ub:"region"`+"`"+`
+}
+
+func Library() *runtime.Library {
+	return &runtime.Library{Configuration: LibraryConfiguration()}
 }
 
 func LibraryConfiguration() *cfg.ConfigurationType[*Configuration] {
