@@ -2,7 +2,7 @@ module github.com/cloudboss/cloudboss-docs/unobin
 
 go 1.26.2
 
-require github.com/cloudboss/unobin v0.13.0-a.4
+require github.com/cloudboss/unobin v0.13.0
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
